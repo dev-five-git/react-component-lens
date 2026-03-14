@@ -77,7 +77,7 @@
   },
   "scripts": {
     "build": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked",
-    "build:production": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --minify",
+    "build:production": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --minify",
     "watch": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked --watch",
     "typecheck": "tsc -p ./tsconfig.json",
     "lint": "oxlint .",
