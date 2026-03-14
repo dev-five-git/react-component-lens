@@ -62,8 +62,9 @@ activate() → ComponentLensAnalyzer.analyzeDocument()
 - **Linter**: oxlint (not ESLint) — run `bun run lint:fix`
 - **Package manager**: bun (but npm-compatible)
 - **Test runner**: Node.js built-in `node:test` — run `bun run test`
-- **Build**: Plain `tsc` (no bundler) — output to `out/`
-- **Publish**: `@vscode/vsce` — manual `vsce publish`
+- **Build**: `bun build` bundles `src/extension.ts` → single `out/extension.js` (CJS, externals: vscode + typescript)
+- **Type check**: `tsc` with `noEmit` — run `bun run typecheck`
+- **Publish**: `@vscode/vsce` — manual `vsce publish` (prepublish runs minified production build)
 - **Pre-commit hook**: Husky runs lint automatically
 - **TypeScript**: Strict mode with `noUnusedLocals` + `noUnusedParameters`
 - **Import style**: `node:` prefix for Node builtins, type-only imports where possible
@@ -86,11 +87,13 @@ activate() → ComponentLensAnalyzer.analyzeDocument()
 ## COMMANDS
 
 ```bash
-bun run build          # Compile TS → out/
-bun run watch          # Watch mode
+bun run build          # Bundle src/extension.ts → out/extension.js
+bun run build:production  # Minified bundle, no sourcemap
+bun run watch          # Watch mode with sourcemaps
+bun run typecheck      # tsc type checking (no emit)
 bun run lint           # oxlint check
 bun run lint:fix       # oxlint auto-fix
-bun run test           # Build + run Node.js tests
+bun run test           # Run tests directly from TS source
 ```
 
 ## NOTES

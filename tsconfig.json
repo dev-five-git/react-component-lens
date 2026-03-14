@@ -6,9 +6,7 @@
     "lib": [
       "ES2022"
     ],
-    "outDir": "out",
-    "rootDir": ".",
-    "sourceMap": true,
+    "noEmit": true,
     "strict": true,
     "noImplicitOverride": true,
     "noUnusedLocals": true,

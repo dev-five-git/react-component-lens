@@ -4,7 +4,7 @@
 .gitignore
 bun.lock
 eslint.config.mjs
-out/test/**
+out/**/*.map
 src/**
 test/**
 tsconfig.json

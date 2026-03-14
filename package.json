@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "./"
+    "url": "https://github.com/dev-five-git/react-component-lens"
   },
   "categories": [
     "Other"
@@ -26,7 +26,7 @@
     "onLanguage:typescriptreact",
     "onLanguage:javascriptreact"
   ],
-  "main": "./out/src/extension.js",
+  "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
@@ -76,13 +76,14 @@
     }
   },
   "scripts": {
-    "build": "tsc -p ./tsconfig.json",
-    "compile": "bun run build",
-    "watch": "tsc -watch -p ./tsconfig.json",
+    "build": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked",
+    "build:production": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --minify",
+    "watch": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked --watch",
+    "typecheck": "tsc -p ./tsconfig.json",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
-    "test": "bun run build && node --test out/test/analyzer.test.js",
-    "vscode:prepublish": "bun run build",
+    "test": "bun test",
+    "vscode:prepublish": "bun run build:production",
     "prepare": "husky"
   },
   "dependencies": {
