@@ -28,23 +28,38 @@ export class LensDecorations implements vscode.Disposable {
   public apply(editor: vscode.TextEditor, usages: ComponentUsage[]): void {
     const clientDecorations: vscode.DecorationOptions[] = []
     const serverDecorations: vscode.DecorationOptions[] = []
+    const editorDir = path.dirname(editor.document.uri.fsPath)
+    const displayPathCache = new Map<string, string>()
 
     for (const usage of usages) {
-      for (const range of usage.ranges) {
-        const decoration: vscode.DecorationOptions = {
-          hoverMessage: new vscode.MarkdownString(
-            `${usage.kind === 'client' ? 'Client' : 'Server'} component from \`${toDisplayPath(editor.document.uri, usage.sourceFilePath)}\``,
-          ),
-          range: new vscode.Range(
-            editor.document.positionAt(range.start),
-            editor.document.positionAt(range.end),
-          ),
-        }
+      let displayPath = displayPathCache.get(usage.sourceFilePath)
+      if (displayPath === undefined) {
+        displayPath = toDisplayPath(editorDir, usage.sourceFilePath)
+        displayPathCache.set(usage.sourceFilePath, displayPath)
+      }
 
+      const label = usage.kind === 'client' ? 'Client' : 'Server'
+      const hoverMessage = new vscode.MarkdownString(
+        `${label} component from \`${displayPath}\``,
+      )
+
+      for (const range of usage.ranges) {
         if (usage.kind === 'client') {
-          clientDecorations.push(decoration)
+          clientDecorations.push({
+            hoverMessage,
+            range: new vscode.Range(
+              editor.document.positionAt(range.start),
+              editor.document.positionAt(range.end),
+            ),
+          })
         } else {
-          serverDecorations.push(decoration)
+          serverDecorations.push({
+            hoverMessage,
+            range: new vscode.Range(
+              editor.document.positionAt(range.start),
+              editor.document.positionAt(range.end),
+            ),
+          })
         }
       }
     }
@@ -64,14 +79,8 @@ export class LensDecorations implements vscode.Disposable {
   }
 }
 
-function toDisplayPath(
-  documentUri: vscode.Uri,
-  sourceFilePath: string,
-): string {
-  const relativePath = path.relative(
-    path.dirname(documentUri.fsPath),
-    sourceFilePath,
-  )
+function toDisplayPath(editorDir: string, sourceFilePath: string): string {
+  const relativePath = path.relative(editorDir, sourceFilePath)
   return relativePath.length > 0 ? relativePath : path.basename(sourceFilePath)
 }
 

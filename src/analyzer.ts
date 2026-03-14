@@ -91,14 +91,15 @@ export class ComponentLensAnalyzer {
     }
 
     const componentKinds = new Map<string, ComponentKind>()
-    await Promise.all(
-      [...uniqueFilePaths].map(async (resolvedPath) => {
-        componentKinds.set(
-          resolvedPath,
-          await this.getFileComponentKind(resolvedPath),
-        )
-      }),
-    )
+    const kindPromises: Promise<void>[] = []
+    for (const resolvedPath of uniqueFilePaths) {
+      kindPromises.push(
+        this.getFileComponentKind(resolvedPath).then((kind) => {
+          componentKinds.set(resolvedPath, kind)
+        }),
+      )
+    }
+    await Promise.all(kindPromises)
 
     const usages: ComponentUsage[] = []
 
@@ -183,19 +184,35 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
 
   const imports = new Map<string, ImportBinding>()
   const localComponentNames = new Set<string>()
+  let ownComponentKind: Exclude<ComponentKind, 'unknown'> = 'server'
+  let statementIndex = 0
 
-  for (const statement of sourceFile.statements) {
+  for (; statementIndex < sourceFile.statements.length; statementIndex++) {
+    const statement = sourceFile.statements[statementIndex]!
+    if (
+      !ts.isExpressionStatement(statement) ||
+      !ts.isStringLiteral(statement.expression)
+    ) {
+      break
+    }
+    if (statement.expression.text === 'use client') {
+      ownComponentKind = 'client'
+      statementIndex++
+      break
+    }
+  }
+
+  for (; statementIndex < sourceFile.statements.length; statementIndex++) {
+    const statement = sourceFile.statements[statementIndex]!
     collectImportBindings(statement, imports)
     collectLocalComponentName(statement, localComponentNames)
   }
 
-  const jsxTags = collectJsxTags(sourceFile)
-
   return {
     imports,
-    jsxTags,
+    jsxTags: collectJsxTags(sourceFile),
     localComponentNames,
-    ownComponentKind: hasUseClientDirective(sourceFile) ? 'client' : 'server',
+    ownComponentKind,
   }
 }
 
@@ -278,24 +295,6 @@ function collectLocalComponentName(
   }
 }
 
-function hasUseClientDirective(sourceFile: ts.SourceFile): boolean {
-  for (const statement of sourceFile.statements) {
-    if (
-      !ts.isExpressionStatement(statement) ||
-      !ts.isStringLiteral(statement.expression)
-    ) {
-      return false
-    }
-
-    if (statement.expression.text === 'use client') {
-      return true
-    }
-  }
-
-  return false
-}
-
-const COMPONENT_NAME_RE = /^[A-Z]/u
 const COMPONENT_WRAPPER_NAMES = new Set([
   'forwardRef',
   'memo',
@@ -304,7 +303,8 @@ const COMPONENT_WRAPPER_NAMES = new Set([
 ])
 
 function isComponentIdentifier(name: string): boolean {
-  return COMPONENT_NAME_RE.test(name)
+  const code = name.charCodeAt(0)
+  return code >= 65 && code <= 90
 }
 
 function isComponentInitializer(

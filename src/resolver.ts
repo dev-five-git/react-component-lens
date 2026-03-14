@@ -33,17 +33,22 @@ export class ImportResolver {
   >()
   private readonly configPathCache = new Map<string, string | undefined>()
   private readonly resolutionCache = new Map<string, string | undefined>()
-  private readonly hostDirectoryExists: (directoryPath: string) => boolean
-  private readonly hostFileExists: (filePath: string) => boolean
-  private readonly hostReadFile: (filePath: string) => string | undefined
+  private readonly resolutionHost: ts.ModuleResolutionHost
+  private currentDirectory = ''
 
   public constructor(private readonly host: SourceHost) {
-    this.hostDirectoryExists = (directoryPath) =>
-      host.fileExists(directoryPath) || ts.sys.directoryExists(directoryPath)
-    this.hostFileExists = (filePath) =>
-      host.fileExists(filePath) || ts.sys.fileExists(filePath)
-    this.hostReadFile = (filePath) =>
-      host.readFile(filePath) ?? ts.sys.readFile(filePath)
+    this.resolutionHost = {
+      directoryExists: (directoryPath) =>
+        host.fileExists(directoryPath) || ts.sys.directoryExists(directoryPath),
+      fileExists: (filePath) =>
+        host.fileExists(filePath) || ts.sys.fileExists(filePath),
+      getCurrentDirectory: () => this.currentDirectory,
+      getDirectories: ts.sys.getDirectories,
+      readFile: (filePath) =>
+        host.readFile(filePath) ?? ts.sys.readFile(filePath),
+      realpath: ts.sys.realpath,
+      useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
+    }
   }
 
   public clear(): void {
@@ -64,21 +69,13 @@ export class ImportResolver {
     }
 
     const compilerOptions = this.getCompilerOptions(normalizedFromFilePath)
-    const resolutionHost: ts.ModuleResolutionHost = {
-      directoryExists: this.hostDirectoryExists,
-      fileExists: this.hostFileExists,
-      getCurrentDirectory: () => path.dirname(normalizedFromFilePath),
-      getDirectories: ts.sys.getDirectories,
-      readFile: this.hostReadFile,
-      realpath: ts.sys.realpath,
-      useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
-    }
+    this.currentDirectory = path.dirname(normalizedFromFilePath)
 
     const result = ts.resolveModuleName(
       specifier,
       normalizedFromFilePath,
       compilerOptions,
-      resolutionHost,
+      this.resolutionHost,
     ).resolvedModule
 
     if (!result || !isSupportedSourceFile(result.resolvedFileName)) {
