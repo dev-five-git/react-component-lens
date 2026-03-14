@@ -1,0 +1,11 @@
+.vscode/**
+.husky/**
+.oxlintrc.json
+.gitignore
+bun.lock
+eslint.config.mjs
+out/test/**
+src/**
+test/**
+tsconfig.json
+react-component-lens-plan.md

@@ -1,0 +1,100 @@
+{
+  "name": "react-component-lens",
+  "displayName": "React Component Lens",
+  "description": "Highlight React Server and Client component usage directly in the editor.",
+  "version": "0.1.0",
+  "publisher": "owjs3",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "./"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "react",
+    "nextjs",
+    "server-components",
+    "client-components",
+    "typescript"
+  ],
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "activationEvents": [
+    "onLanguage:typescriptreact",
+    "onLanguage:javascriptreact"
+  ],
+  "main": "./out/src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "reactComponentLens.refresh",
+        "title": "React Component Lens: Refresh Decorations"
+      }
+    ],
+    "configuration": {
+      "title": "React Component Lens",
+      "properties": {
+        "reactComponentLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable React Component Lens decorations in React editors."
+        },
+        "reactComponentLens.debounceMs": {
+          "type": "number",
+          "default": 200,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Debounce delay, in milliseconds, before recomputing decorations after workspace changes."
+        },
+        "reactComponentLens.highlightColors": {
+          "type": "object",
+          "default": {
+            "clientComponent": "#14b8a6",
+            "serverComponent": "#f59e0b"
+          },
+          "additionalProperties": false,
+          "description": "Text colors for React Component Lens decorations.",
+          "properties": {
+            "clientComponent": {
+              "type": "string",
+              "format": "color",
+              "default": "#14b8a6",
+              "description": "CSS text color used for Client Component usages."
+            },
+            "serverComponent": {
+              "type": "string",
+              "format": "color",
+              "default": "#f59e0b",
+              "description": "CSS text color used for Server Component usages."
+            }
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./tsconfig.json",
+    "compile": "bun run build",
+    "watch": "tsc -watch -p ./tsconfig.json",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "test": "bun run build && node --test out/test/analyzer.test.js",
+    "vscode:prepublish": "bun run build",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "typescript": "5.9.3"
+  },
+  "devDependencies": {
+    "eslint-plugin-devup": "^2.0.17",
+    "husky": "^9.1.7",
+    "oxlint": "^1.55",
+    "@types/node": "25.5.0",
+    "@types/vscode": "1.110.0",
+    "@vscode/vsce": "3.7.1",
+    "globals": "17.4.0"
+  }
+}
