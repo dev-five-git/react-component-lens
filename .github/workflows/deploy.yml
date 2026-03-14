@@ -1,0 +1,93 @@
+name: Deploy to VS Code Marketplace
+
+on:
+  push:
+    branches:
+      - main
+  pull_request_target: 
+    branches:
+      - main
+
+
+permissions:
+  contents: read
+
+jobs:
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+
+  changepacks:
+    name: changepacks
+    runs-on: ubuntu-latest
+    permissions:
+      # create pull request comments
+      pull-requests: write
+
+      # Actions > General > Workflow permissions for creating pull request
+      # Create brench to create pull request
+      contents: write
+    needs:
+      - test
+    steps:
+      - uses: actions/checkout@v5
+      - uses: changepacks/action@main
+        id: changepacks
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+    outputs:
+      changepacks: ${{ steps.changepacks.outputs.changepacks }}
+      release_assets_urls: ${{ steps.changepacks.outputs.release_assets_urls }}
+
+  upload-assets:
+    needs: changepacks
+    if: ${{ contains(needs.changepacks.outputs.changepacks, 'package.json') }}
+    permissions:
+      contents: write
+    name: Upload Assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Package VSIX
+        run: bunx @vscode/vsce package --no-dependencies
+
+      - name: Upload Asset
+        uses: owjs3901/upload-github-release-asset@main
+        with:
+          upload_url: ${{ fromJson(needs.changepacks.outputs.release_assets_urls)['package.json'] }}
+          asset_path: react-component-lens-*.vsix
+
+  publish:
+    name: Publish
+    runs-on: ubuntu-latest
+    if: ${{ contains(needs.changepacks.outputs.changepacks, 'package.json') }}
+    needs:
+      - changepacks
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Publish to VS Code Marketplace
+        run: bunx @vscode/vsce publish --no-dependencies
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
