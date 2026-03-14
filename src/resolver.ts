@@ -57,11 +57,11 @@ export class ImportResolver {
       fileExists: (filePath) =>
         this.host.fileExists(filePath) || ts.sys.fileExists(filePath),
       getCurrentDirectory: () => path.dirname(normalizedFromFilePath),
-      getDirectories: (directoryPath) => ts.sys.getDirectories(directoryPath),
+      getDirectories: ts.sys.getDirectories,
       readFile: (filePath) =>
         this.host.readFile(filePath) ?? ts.sys.readFile(filePath),
-      realpath: (filePath) => ts.sys.realpath?.(filePath) ?? filePath,
-      useCaseSensitiveFileNames: () => ts.sys.useCaseSensitiveFileNames,
+      realpath: ts.sys.realpath,
+      useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
     }
 
     const result = ts.resolveModuleName(

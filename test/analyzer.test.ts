@@ -222,6 +222,182 @@ void test('resolves tsconfig path aliases when mapping component types', () => {
   }
 })
 
+void test('clear() resets all caches and re-analyses from scratch', () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import Button from './Button';",
+      '',
+      'export default function Page() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+    'Button.tsx': [
+      "'use client';",
+      '',
+      'export default function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const source = project.readFile('Page.tsx')
+    const sig = project.signature('Page.tsx')
+
+    const before = analyzer.analyzeDocument(filePath, source, sig)
+    assert.equal(before.length, 1)
+    assert.equal(before[0]?.kind, 'client')
+
+    analyzer.clear()
+
+    const after = analyzer.analyzeDocument(filePath, source, sig)
+    assert.equal(after.length, 1)
+    assert.equal(after[0]?.kind, 'client')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+void test('recognizes forwardRef-wrapped local components', () => {
+  const project = createProject({
+    'Card.tsx': [
+      "'use client';",
+      '',
+      'const Button = forwardRef((props) => <button />);',
+      '',
+      'export function Card() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Card.tsx')
+    const usages = analyzer.analyzeDocument(
+      filePath,
+      project.readFile('Card.tsx'),
+      project.signature('Card.tsx'),
+    )
+
+    assert.equal(usages.length, 1)
+    assert.equal(usages[0]?.kind, 'client')
+    assert.equal(usages[0]?.tagName, 'Button')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+void test('resolves namespaced JSX like <UI.Button />', () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import * as UI from './ui';",
+      '',
+      'export default function Page() {',
+      '  return <UI.Button />;',
+      '}',
+    ].join('\n'),
+    'ui.tsx': [
+      "'use client';",
+      '',
+      'export function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const source = project.readFile('Page.tsx')
+    const usages = analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Page.tsx'),
+    )
+
+    assert.equal(usages.length, 1)
+    assert.equal(usages[0]?.kind, 'client')
+    assert.equal(usages[0]?.tagName, 'UI.Button')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+void test('resolves bare package imports through node_modules', () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import Button from 'my-ui';",
+      '',
+      'export default function Page() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+    'node_modules/my-ui/package.json': JSON.stringify({
+      name: 'my-ui',
+      main: './index.tsx',
+    }),
+    'node_modules/my-ui/index.tsx': [
+      "'use client';",
+      '',
+      'export default function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const usages = analyzer.analyzeDocument(
+      filePath,
+      project.readFile('Page.tsx'),
+      project.signature('Page.tsx'),
+    )
+
+    assert.equal(usages.length, 1)
+    assert.equal(usages[0]?.kind, 'client')
+    assert.equal(usages[0]?.tagName, 'Button')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+void test('resolves deeply nested namespaced JSX like <UI.Forms.Input />', () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import * as UI from './ui';",
+      '',
+      'export default function Page() {',
+      '  return <UI.Forms.Input />;',
+      '}',
+    ].join('\n'),
+    'ui.tsx': [
+      "'use client';",
+      '',
+      'export const Forms = { Input: () => <input /> };',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const usages = analyzer.analyzeDocument(
+      filePath,
+      project.readFile('Page.tsx'),
+      project.signature('Page.tsx'),
+    )
+
+    assert.equal(usages.length, 1)
+    assert.equal(usages[0]?.kind, 'client')
+    assert.equal(usages[0]?.tagName, 'UI.Forms.Input')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
 function createAnalyzer(host: SourceHost): ComponentLensAnalyzer {
   const resolver = new ImportResolver(host)
   return new ComponentLensAnalyzer(host, resolver)
