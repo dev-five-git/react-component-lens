@@ -35,6 +35,8 @@ export class ImportResolver {
   private readonly resolutionCache = new Map<string, string | undefined>()
   private readonly resolutionHost: ts.ModuleResolutionHost
   private currentDirectory = ''
+  private lastFromPath = ''
+  private lastNormalizedFromPath = ''
 
   public constructor(private readonly host: SourceHost) {
     this.resolutionHost = {
@@ -55,13 +57,23 @@ export class ImportResolver {
     this.compilerOptionsCache.clear()
     this.configPathCache.clear()
     this.resolutionCache.clear()
+    this.lastFromPath = ''
+    this.lastNormalizedFromPath = ''
   }
 
   public resolveImport(
     fromFilePath: string,
     specifier: string,
   ): string | undefined {
-    const normalizedFromFilePath = path.normalize(fromFilePath)
+    let normalizedFromFilePath: string
+    if (fromFilePath === this.lastFromPath) {
+      normalizedFromFilePath = this.lastNormalizedFromPath
+    } else {
+      normalizedFromFilePath = path.normalize(fromFilePath)
+      this.lastFromPath = fromFilePath
+      this.lastNormalizedFromPath = normalizedFromFilePath
+    }
+
     const cacheKey = `${normalizedFromFilePath}::${specifier}`
     const cached = this.resolutionCache.get(cacheKey)
     if (cached !== undefined || this.resolutionCache.has(cacheKey)) {

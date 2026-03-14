@@ -21,15 +21,16 @@ interface CachedAnalysis {
   signature: string
 }
 
+interface CachedDirective {
+  kind: Exclude<ComponentKind, 'unknown'>
+  signature: string
+}
+
 interface FileAnalysis {
-  imports: Map<string, ImportBinding>
+  imports: Map<string, string>
   jsxTags: JsxTagReference[]
   localComponentNames: Set<string>
   ownComponentKind: Exclude<ComponentKind, 'unknown'>
-}
-
-interface ImportBinding {
-  source: string
 }
 
 interface JsxTagReference {
@@ -40,6 +41,7 @@ interface JsxTagReference {
 
 export class ComponentLensAnalyzer {
   private readonly analysisCache = new Map<string, CachedAnalysis>()
+  private readonly directiveCache = new Map<string, CachedDirective>()
 
   public constructor(
     private readonly host: SourceHost,
@@ -48,11 +50,13 @@ export class ComponentLensAnalyzer {
 
   public clear(): void {
     this.analysisCache.clear()
+    this.directiveCache.clear()
     this.resolver.clear()
   }
 
   public invalidateFile(filePath: string): void {
     this.analysisCache.delete(filePath)
+    this.directiveCache.delete(filePath)
   }
 
   public async analyzeDocument(
@@ -65,41 +69,41 @@ export class ComponentLensAnalyzer {
       return []
     }
 
-    const tagResolutions = new Map<JsxTagReference, string>()
+    const resolvedPaths = new Map<string, string>()
     const uniqueFilePaths = new Set<string>()
 
     for (const jsxTag of analysis.jsxTags) {
-      if (analysis.localComponentNames.has(jsxTag.lookupName)) {
+      const lookupName = jsxTag.lookupName
+      if (
+        analysis.localComponentNames.has(lookupName) ||
+        resolvedPaths.has(lookupName)
+      ) {
         continue
       }
 
-      const importBinding = analysis.imports.get(jsxTag.lookupName)
-      if (!importBinding) {
+      const importSource = analysis.imports.get(lookupName)
+      if (!importSource) {
         continue
       }
 
       const resolvedFilePath = this.resolver.resolveImport(
         filePath,
-        importBinding.source,
+        importSource,
       )
-      if (!resolvedFilePath) {
-        continue
+      if (resolvedFilePath) {
+        resolvedPaths.set(lookupName, resolvedFilePath)
+        uniqueFilePaths.add(resolvedFilePath)
       }
-
-      tagResolutions.set(jsxTag, resolvedFilePath)
-      uniqueFilePaths.add(resolvedFilePath)
     }
 
     const componentKinds = new Map<string, ComponentKind>()
-    const kindPromises: Promise<void>[] = []
-    for (const resolvedPath of uniqueFilePaths) {
-      kindPromises.push(
+    await Promise.all(
+      Array.from(uniqueFilePaths, (resolvedPath) =>
         this.getFileComponentKind(resolvedPath).then((kind) => {
           componentKinds.set(resolvedPath, kind)
         }),
-      )
-    }
-    await Promise.all(kindPromises)
+      ),
+    )
 
     const usages: ComponentUsage[] = []
 
@@ -114,7 +118,7 @@ export class ComponentLensAnalyzer {
         continue
       }
 
-      const resolvedFilePath = tagResolutions.get(jsxTag)
+      const resolvedFilePath = resolvedPaths.get(jsxTag.lookupName)
       if (!resolvedFilePath) {
         continue
       }
@@ -153,8 +157,18 @@ export class ComponentLensAnalyzer {
       return 'unknown'
     }
 
-    const analysis = this.getAnalysis(filePath, sourceText, signature)
-    return analysis?.ownComponentKind ?? 'unknown'
+    const cached = this.directiveCache.get(filePath)
+    if (cached && cached.signature === signature) {
+      return cached.kind
+    }
+
+    const kind: Exclude<ComponentKind, 'unknown'> = hasUseClientDirective(
+      sourceText,
+    )
+      ? 'client'
+      : 'server'
+    this.directiveCache.set(filePath, { kind, signature })
+    return kind
   }
 
   private getAnalysis(
@@ -182,7 +196,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     getScriptKind(filePath),
   )
 
-  const imports = new Map<string, ImportBinding>()
+  const imports = new Map<string, string>()
   const localComponentNames = new Set<string>()
   let ownComponentKind: Exclude<ComponentKind, 'unknown'> = 'server'
   let statementIndex = 0
@@ -204,8 +218,60 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
 
   for (; statementIndex < sourceFile.statements.length; statementIndex++) {
     const statement = sourceFile.statements[statementIndex]!
-    collectImportBindings(statement, imports)
-    collectLocalComponentName(statement, localComponentNames)
+
+    if (
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      const source = statement.moduleSpecifier.text
+      const importClause = statement.importClause
+      if (importClause) {
+        if (importClause.name) {
+          imports.set(importClause.name.text, source)
+        }
+        const namedBindings = importClause.namedBindings
+        if (namedBindings) {
+          if (ts.isNamespaceImport(namedBindings)) {
+            imports.set(namedBindings.name.text, source)
+          } else {
+            for (const element of namedBindings.elements) {
+              imports.set(element.name.text, source)
+            }
+          }
+        }
+      }
+      continue
+    }
+
+    if (
+      ts.isFunctionDeclaration(statement) &&
+      statement.name &&
+      isComponentIdentifier(statement.name.text)
+    ) {
+      localComponentNames.add(statement.name.text)
+      continue
+    }
+
+    if (
+      ts.isClassDeclaration(statement) &&
+      statement.name &&
+      isComponentIdentifier(statement.name.text)
+    ) {
+      localComponentNames.add(statement.name.text)
+      continue
+    }
+
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (
+          ts.isIdentifier(declaration.name) &&
+          isComponentIdentifier(declaration.name.text) &&
+          isComponentInitializer(declaration.initializer)
+        ) {
+          localComponentNames.add(declaration.name.text)
+        }
+      }
+    }
   }
 
   return {
@@ -213,85 +279,6 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     jsxTags: collectJsxTags(sourceFile),
     localComponentNames,
     ownComponentKind,
-  }
-}
-
-function collectImportBindings(
-  statement: ts.Statement,
-  imports: Map<string, ImportBinding>,
-): void {
-  if (
-    !ts.isImportDeclaration(statement) ||
-    !ts.isStringLiteral(statement.moduleSpecifier)
-  ) {
-    return
-  }
-
-  const importClause = statement.importClause
-  if (!importClause) {
-    return
-  }
-
-  const binding: ImportBinding = { source: statement.moduleSpecifier.text }
-
-  if (importClause.name) {
-    imports.set(importClause.name.text, binding)
-  }
-
-  const namedBindings = importClause.namedBindings
-  if (!namedBindings) {
-    return
-  }
-
-  if (ts.isNamespaceImport(namedBindings)) {
-    imports.set(namedBindings.name.text, binding)
-    return
-  }
-
-  for (const element of namedBindings.elements) {
-    imports.set(element.name.text, binding)
-  }
-}
-
-function collectLocalComponentName(
-  statement: ts.Statement,
-  localComponentNames: Set<string>,
-): void {
-  if (
-    ts.isFunctionDeclaration(statement) &&
-    statement.name &&
-    isComponentIdentifier(statement.name.text)
-  ) {
-    localComponentNames.add(statement.name.text)
-    return
-  }
-
-  if (
-    ts.isClassDeclaration(statement) &&
-    statement.name &&
-    isComponentIdentifier(statement.name.text)
-  ) {
-    localComponentNames.add(statement.name.text)
-    return
-  }
-
-  if (!ts.isVariableStatement(statement)) {
-    return
-  }
-
-  for (const declaration of statement.declarationList.declarations) {
-    if (!ts.isIdentifier(declaration.name)) {
-      continue
-    }
-
-    if (
-      !isComponentIdentifier(declaration.name.text) ||
-      !isComponentInitializer(declaration.initializer)
-    ) {
-      continue
-    }
-
-    localComponentNames.add(declaration.name.text)
   }
 }
 
@@ -326,9 +313,7 @@ function isComponentInitializer(
     return false
   }
 
-  const callee = initializer.expression
-  const calleeName = ts.isIdentifier(callee) ? callee.text : callee.getText()
-  if (!COMPONENT_WRAPPER_NAMES.has(calleeName)) {
+  if (!COMPONENT_WRAPPER_NAMES.has(getCalleeText(initializer.expression))) {
     return false
   }
 
@@ -336,6 +321,21 @@ function isComponentInitializer(
     (argument) =>
       ts.isArrowFunction(argument) || ts.isFunctionExpression(argument),
   )
+}
+
+function getCalleeText(expression: ts.Expression): string {
+  if (ts.isIdentifier(expression)) {
+    return expression.text
+  }
+
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    ts.isIdentifier(expression.expression)
+  ) {
+    return `${expression.expression.text}.${expression.name.text}`
+  }
+
+  return ''
 }
 
 function collectJsxTags(sourceFile: ts.SourceFile): JsxTagReference[] {
@@ -455,4 +455,60 @@ function getScriptKind(filePath: string): ts.ScriptKind {
   }
 
   return ts.ScriptKind.TS
+}
+
+function hasUseClientDirective(sourceText: string): boolean {
+  const len = sourceText.length
+  let i = 0
+
+  while (i < len) {
+    const ch = sourceText.charCodeAt(i)
+
+    if (ch <= 32 || ch === 59 || ch === 0xfeff) {
+      i++
+      continue
+    }
+
+    if (ch === 47 && i + 1 < len) {
+      const next = sourceText.charCodeAt(i + 1)
+      if (next === 47) {
+        i += 2
+        while (i < len && sourceText.charCodeAt(i) !== 10) i++
+        continue
+      }
+      if (next === 42) {
+        i += 2
+        while (i + 1 < len) {
+          if (
+            sourceText.charCodeAt(i) === 42 &&
+            sourceText.charCodeAt(i + 1) === 47
+          ) {
+            i += 2
+            break
+          }
+          i++
+        }
+        continue
+      }
+    }
+
+    if (ch === 34 && sourceText.startsWith('"use client"', i)) {
+      return true
+    }
+
+    if (ch === 39 && sourceText.startsWith("'use client'", i)) {
+      return true
+    }
+
+    if (ch === 34 || ch === 39) {
+      i++
+      while (i < len && sourceText.charCodeAt(i) !== ch) i++
+      if (i < len) i++
+      continue
+    }
+
+    return false
+  }
+
+  return false
 }

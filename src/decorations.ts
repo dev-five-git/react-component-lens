@@ -29,38 +29,30 @@ export class LensDecorations implements vscode.Disposable {
     const clientDecorations: vscode.DecorationOptions[] = []
     const serverDecorations: vscode.DecorationOptions[] = []
     const editorDir = path.dirname(editor.document.uri.fsPath)
-    const displayPathCache = new Map<string, string>()
+    const hoverCache = new Map<string, vscode.MarkdownString>()
 
     for (const usage of usages) {
-      let displayPath = displayPathCache.get(usage.sourceFilePath)
-      if (displayPath === undefined) {
-        displayPath = toDisplayPath(editorDir, usage.sourceFilePath)
-        displayPathCache.set(usage.sourceFilePath, displayPath)
+      let hoverMessage = hoverCache.get(usage.sourceFilePath)
+      if (!hoverMessage) {
+        const displayPath = toDisplayPath(editorDir, usage.sourceFilePath)
+        const label = usage.kind === 'client' ? 'Client' : 'Server'
+        hoverMessage = new vscode.MarkdownString(
+          `${label} component from \`${displayPath}\``,
+        )
+        hoverCache.set(usage.sourceFilePath, hoverMessage)
       }
 
-      const label = usage.kind === 'client' ? 'Client' : 'Server'
-      const hoverMessage = new vscode.MarkdownString(
-        `${label} component from \`${displayPath}\``,
-      )
+      const target =
+        usage.kind === 'client' ? clientDecorations : serverDecorations
 
       for (const range of usage.ranges) {
-        if (usage.kind === 'client') {
-          clientDecorations.push({
-            hoverMessage,
-            range: new vscode.Range(
-              editor.document.positionAt(range.start),
-              editor.document.positionAt(range.end),
-            ),
-          })
-        } else {
-          serverDecorations.push({
-            hoverMessage,
-            range: new vscode.Range(
-              editor.document.positionAt(range.start),
-              editor.document.positionAt(range.end),
-            ),
-          })
-        }
+        target.push({
+          hoverMessage,
+          range: new vscode.Range(
+            editor.document.positionAt(range.start),
+            editor.document.positionAt(range.end),
+          ),
+        })
       }
     }
 
