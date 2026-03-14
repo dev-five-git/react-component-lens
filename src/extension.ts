@@ -8,7 +8,8 @@ import { type HighlightColors, LensDecorations } from './decorations'
 import { ImportResolver, type SourceHost } from './resolver'
 
 const SUPPORTED_LANGUAGE_IDS = new Set(['javascriptreact', 'typescriptreact'])
-const WATCH_PATTERNS = ['**/*.{js,jsx,ts,tsx}', '**/{tsconfig,jsconfig}.json']
+const SOURCE_WATCH_PATTERN = '**/*.{js,jsx,ts,tsx}'
+const CONFIG_WATCH_PATTERN = '**/{tsconfig,jsconfig}.json'
 const DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
   clientComponent: '#14b8a6',
   serverComponent: '#f59e0b',
@@ -64,6 +65,29 @@ export function activate(context: vscode.ExtensionContext): void {
     decorations.apply(editor, usages)
   }
 
+  const createWatcher = (
+    folder: vscode.WorkspaceFolder,
+    pattern: string,
+    onChange: (uri: vscode.Uri) => void,
+  ): void => {
+    const watcher = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(folder, pattern),
+    )
+    watcher.onDidChange(onChange, undefined, context.subscriptions)
+    watcher.onDidCreate(
+      () => clearCachesAndRefresh(),
+      undefined,
+      context.subscriptions,
+    )
+    watcher.onDidDelete(
+      () => clearCachesAndRefresh(),
+      undefined,
+      context.subscriptions,
+    )
+    watcherDisposables.push(watcher)
+    context.subscriptions.push(watcher)
+  }
+
   const registerWatchers = (): void => {
     for (const disposable of watcherDisposables) {
       disposable.dispose()
@@ -72,28 +96,13 @@ export function activate(context: vscode.ExtensionContext): void {
     watcherDisposables = []
 
     for (const workspaceFolder of vscode.workspace.workspaceFolders ?? []) {
-      for (const pattern of WATCH_PATTERNS) {
-        const watcher = vscode.workspace.createFileSystemWatcher(
-          new vscode.RelativePattern(workspaceFolder, pattern),
-        )
-        watcher.onDidChange(
-          () => clearCachesAndRefresh(),
-          undefined,
-          context.subscriptions,
-        )
-        watcher.onDidCreate(
-          () => clearCachesAndRefresh(),
-          undefined,
-          context.subscriptions,
-        )
-        watcher.onDidDelete(
-          () => clearCachesAndRefresh(),
-          undefined,
-          context.subscriptions,
-        )
-        watcherDisposables.push(watcher)
-        context.subscriptions.push(watcher)
-      }
+      createWatcher(workspaceFolder, SOURCE_WATCH_PATTERN, (uri) => {
+        analyzer.invalidateFile(uri.fsPath)
+        scheduleRefresh()
+      })
+      createWatcher(workspaceFolder, CONFIG_WATCH_PATTERN, () =>
+        clearCachesAndRefresh(),
+      )
     }
   }
 

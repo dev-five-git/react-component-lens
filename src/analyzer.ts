@@ -192,7 +192,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     filePath,
     sourceText,
     ts.ScriptTarget.Latest,
-    true,
+    false,
     getScriptKind(filePath),
   )
 
@@ -430,15 +430,11 @@ function getTagRanges(
 function getRootIdentifier(
   expression: ts.Expression,
 ): ts.Identifier | undefined {
-  if (ts.isIdentifier(expression)) {
-    return expression
+  let current = expression
+  while (ts.isPropertyAccessExpression(current)) {
+    current = current.expression
   }
-
-  if (ts.isPropertyAccessExpression(expression)) {
-    return getRootIdentifier(expression.expression)
-  }
-
-  return undefined
+  return ts.isIdentifier(current) ? current : undefined
 }
 
 function getScriptKind(filePath: string): ts.ScriptKind {
