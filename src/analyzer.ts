@@ -51,26 +51,25 @@ export class ComponentLensAnalyzer {
     this.resolver.clear()
   }
 
-  public analyzeDocument(
+  public invalidateFile(filePath: string): void {
+    this.analysisCache.delete(filePath)
+  }
+
+  public async analyzeDocument(
     filePath: string,
     sourceText: string,
     signature: string,
-  ): ComponentUsage[] {
+  ): Promise<ComponentUsage[]> {
     const analysis = this.getAnalysis(filePath, sourceText, signature)
     if (!analysis) {
       return []
     }
 
-    const usages: ComponentUsage[] = []
+    const tagResolutions = new Map<JsxTagReference, string>()
+    const uniqueFilePaths = new Set<string>()
 
     for (const jsxTag of analysis.jsxTags) {
       if (analysis.localComponentNames.has(jsxTag.lookupName)) {
-        usages.push({
-          kind: analysis.ownComponentKind,
-          ranges: jsxTag.ranges,
-          sourceFilePath: filePath,
-          tagName: jsxTag.tagName,
-        })
         continue
       }
 
@@ -87,8 +86,40 @@ export class ComponentLensAnalyzer {
         continue
       }
 
-      const componentKind = this.getFileComponentKind(resolvedFilePath)
-      if (componentKind === 'unknown') {
+      tagResolutions.set(jsxTag, resolvedFilePath)
+      uniqueFilePaths.add(resolvedFilePath)
+    }
+
+    const componentKinds = new Map<string, ComponentKind>()
+    await Promise.all(
+      [...uniqueFilePaths].map(async (resolvedPath) => {
+        componentKinds.set(
+          resolvedPath,
+          await this.getFileComponentKind(resolvedPath),
+        )
+      }),
+    )
+
+    const usages: ComponentUsage[] = []
+
+    for (const jsxTag of analysis.jsxTags) {
+      if (analysis.localComponentNames.has(jsxTag.lookupName)) {
+        usages.push({
+          kind: analysis.ownComponentKind,
+          ranges: jsxTag.ranges,
+          sourceFilePath: filePath,
+          tagName: jsxTag.tagName,
+        })
+        continue
+      }
+
+      const resolvedFilePath = tagResolutions.get(jsxTag)
+      if (!resolvedFilePath) {
+        continue
+      }
+
+      const componentKind = componentKinds.get(resolvedFilePath)
+      if (!componentKind || componentKind === 'unknown') {
         continue
       }
 
@@ -103,9 +134,15 @@ export class ComponentLensAnalyzer {
     return usages
   }
 
-  private getFileComponentKind(filePath: string): ComponentKind {
-    const sourceText = this.host.readFile(filePath)
-    const signature = this.host.getSignature(filePath)
+  private async getFileComponentKind(filePath: string): Promise<ComponentKind> {
+    const [sourceText, signature] = await Promise.all([
+      this.host.readFileAsync
+        ? this.host.readFileAsync(filePath)
+        : this.host.readFile(filePath),
+      this.host.getSignatureAsync
+        ? this.host.getSignatureAsync(filePath)
+        : this.host.getSignature(filePath),
+    ])
     if (sourceText === undefined || signature === undefined) {
       return 'unknown'
     }
@@ -253,8 +290,16 @@ function hasUseClientDirective(sourceFile: ts.SourceFile): boolean {
   return false
 }
 
+const COMPONENT_NAME_RE = /^[A-Z]/u
+const COMPONENT_WRAPPER_NAMES = new Set([
+  'forwardRef',
+  'memo',
+  'React.forwardRef',
+  'React.memo',
+])
+
 function isComponentIdentifier(name: string): boolean {
-  return /^[A-Z]/u.test(name)
+  return COMPONENT_NAME_RE.test(name)
 }
 
 function isComponentInitializer(
@@ -277,11 +322,7 @@ function isComponentInitializer(
   }
 
   const calleeName = initializer.expression.getText()
-  if (
-    !['forwardRef', 'memo', 'React.forwardRef', 'React.memo'].includes(
-      calleeName,
-    )
-  ) {
+  if (!COMPONENT_WRAPPER_NAMES.has(calleeName)) {
     return false
   }
 

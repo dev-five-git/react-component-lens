@@ -15,49 +15,47 @@ const DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const initialConfiguration = getConfiguration()
+  let config = getConfiguration()
   const sourceHost = new WorkspaceSourceHost()
   const resolver = new ImportResolver(sourceHost)
   const analyzer = new ComponentLensAnalyzer(sourceHost, resolver)
-  const decorations = new LensDecorations(initialConfiguration.highlightColors)
+  const decorations = new LensDecorations(config.highlightColors)
 
   context.subscriptions.push(decorations)
 
   let refreshTimer: NodeJS.Timeout | undefined
   let watcherDisposables: vscode.Disposable[] = []
 
-  const clearCachesAndRefresh = (
-    delay = getConfiguration().debounceMs,
-  ): void => {
+  const clearCachesAndRefresh = (delay = config.debounceMs): void => {
     analyzer.clear()
     scheduleRefresh(delay)
   }
 
-  const refreshVisibleEditors = (): void => {
-    for (const editor of vscode.window.visibleTextEditors) {
-      refreshEditor(editor)
-    }
+  const refreshVisibleEditors = async (): Promise<void> => {
+    await Promise.all(
+      vscode.window.visibleTextEditors.map((editor) => refreshEditor(editor)),
+    )
   }
 
-  const scheduleRefresh = (delay = getConfiguration().debounceMs): void => {
+  const scheduleRefresh = (delay = config.debounceMs): void => {
     if (refreshTimer) {
       clearTimeout(refreshTimer)
     }
 
     refreshTimer = setTimeout(() => {
       refreshTimer = undefined
-      refreshVisibleEditors()
+      void refreshVisibleEditors()
     }, delay)
   }
 
-  const refreshEditor = (editor: vscode.TextEditor): void => {
-    if (!getConfiguration().enabled || !isSupportedDocument(editor.document)) {
+  const refreshEditor = async (editor: vscode.TextEditor): Promise<void> => {
+    if (!config.enabled || !isSupportedDocument(editor.document)) {
       decorations.clear(editor)
       return
     }
 
     const signature = createOpenSignature(editor.document.version)
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       editor.document.fileName,
       editor.document.getText(),
       signature,
@@ -99,9 +97,9 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('reactComponentLens.refresh', () => {
+    vscode.commands.registerCommand('reactComponentLens.refresh', async () => {
       analyzer.clear()
-      refreshVisibleEditors()
+      await refreshVisibleEditors()
       void vscode.window.showInformationMessage(
         'React Component Lens refreshed.',
       )
@@ -114,14 +112,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeVisibleTextEditors(() => {
       scheduleRefresh(0)
     }),
-    vscode.workspace.onDidChangeTextDocument(() => {
-      clearCachesAndRefresh()
+    vscode.workspace.onDidChangeTextDocument((event) => {
+      analyzer.invalidateFile(event.document.fileName)
+      scheduleRefresh()
     }),
-    vscode.workspace.onDidOpenTextDocument(() => {
-      clearCachesAndRefresh()
+    vscode.workspace.onDidOpenTextDocument((document) => {
+      analyzer.invalidateFile(document.fileName)
+      scheduleRefresh()
     }),
-    vscode.workspace.onDidSaveTextDocument(() => {
-      clearCachesAndRefresh(0)
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      analyzer.invalidateFile(document.fileName)
+      scheduleRefresh(0)
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {
       analyzer.clear()
@@ -133,8 +134,10 @@ export function activate(context: vscode.ExtensionContext): void {
         return
       }
 
+      config = getConfiguration()
+
       if (event.affectsConfiguration('reactComponentLens.highlightColors')) {
-        decorations.updateColors(getConfiguration().highlightColors)
+        decorations.updateColors(config.highlightColors)
       }
 
       scheduleRefresh(0)
@@ -202,12 +205,12 @@ class WorkspaceSourceHost implements SourceHost {
       return createOpenSignature(openDocument.version)
     }
 
-    if (!fs.existsSync(filePath)) {
+    try {
+      const stats = fs.statSync(filePath)
+      return createDiskSignature(stats.mtimeMs, stats.size)
+    } catch {
       return undefined
     }
-
-    const stats = fs.statSync(filePath)
-    return createDiskSignature(stats.mtimeMs, stats.size)
   }
 
   public readFile(filePath: string): string | undefined {
@@ -216,11 +219,40 @@ class WorkspaceSourceHost implements SourceHost {
       return openDocument.getText()
     }
 
-    if (!fs.existsSync(filePath)) {
+    try {
+      return fs.readFileSync(filePath, 'utf8')
+    } catch {
       return undefined
     }
+  }
 
-    return fs.readFileSync(filePath, 'utf8')
+  public async readFileAsync(filePath: string): Promise<string | undefined> {
+    const openDocument = this.getOpenDocument(filePath)
+    if (openDocument) {
+      return openDocument.getText()
+    }
+
+    try {
+      return await fs.promises.readFile(filePath, 'utf8')
+    } catch {
+      return undefined
+    }
+  }
+
+  public async getSignatureAsync(
+    filePath: string,
+  ): Promise<string | undefined> {
+    const openDocument = this.getOpenDocument(filePath)
+    if (openDocument) {
+      return createOpenSignature(openDocument.version)
+    }
+
+    try {
+      const stats = await fs.promises.stat(filePath)
+      return createDiskSignature(stats.mtimeMs, stats.size)
+    } catch {
+      return undefined
+    }
   }
 
   private getOpenDocument(filePath: string): vscode.TextDocument | undefined {

@@ -6,6 +6,8 @@ export interface SourceHost {
   fileExists(filePath: string): boolean
   getSignature(filePath: string): string | undefined
   readFile(filePath: string): string | undefined
+  getSignatureAsync?(filePath: string): Promise<string | undefined>
+  readFileAsync?(filePath: string): Promise<string | undefined>
 }
 
 const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {

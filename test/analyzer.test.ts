@@ -1,13 +1,13 @@
-import assert from 'node:assert/strict'
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import test from 'node:test'
+
+import { expect, test } from 'bun:test'
 
 import { ComponentLensAnalyzer } from '../src/analyzer'
 import { ImportResolver, type SourceHost } from '../src/resolver'
 
-void test('detects client and server component usages from relative imports', () => {
+test('detects client and server component usages from relative imports', async () => {
   const project = createProject({
     'Page.tsx': [
       "import Button from './Button';",
@@ -40,35 +40,33 @@ void test('detects client and server component usages from relative imports', ()
     const pagePath = project.filePath('Page.tsx')
     const analyzer = createAnalyzer(project.host)
     const pageSource = project.readFile('Page.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       pagePath,
       pageSource,
       project.signature('Page.tsx'),
     )
 
-    assert.equal(usages.length, 2)
-    assert.deepEqual(
+    expect(usages.length).toBe(2)
+    expect(
       usages.map((usage) => ({ kind: usage.kind, tagName: usage.tagName })),
-      [
-        { kind: 'client', tagName: 'Button' },
-        { kind: 'server', tagName: 'Layout' },
-      ],
-    )
-    assert.deepEqual(
+    ).toEqual([
+      { kind: 'client', tagName: 'Button' },
+      { kind: 'server', tagName: 'Layout' },
+    ])
+    expect(
       usages.map((usage) =>
         usage.ranges.map((range) => pageSource.slice(range.start, range.end)),
       ),
-      [
-        ['<Button', '/>'],
-        ['<Layout', '/>'],
-      ],
-    )
+    ).toEqual([
+      ['<Button', '/>'],
+      ['<Layout', '/>'],
+    ])
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('includes full delimiters for opening and closing tags', () => {
+test('includes full delimiters for opening and closing tags', async () => {
   const project = createProject({
     'Page.tsx': [
       "import Button from './Button';",
@@ -90,24 +88,23 @@ void test('includes full delimiters for opening and closing tags', () => {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('Page.tsx')
     const source = project.readFile('Page.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       source,
       project.signature('Page.tsx'),
     )
 
-    assert.deepEqual(
+    expect(
       usages.map((usage) =>
         usage.ranges.map((range) => source.slice(range.start, range.end)),
       ),
-      [['<Button', '>'], ['</Button>']],
-    )
+    ).toEqual([['<Button', '>'], ['</Button>']])
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('excludes props while keeping self-closing delimiters', () => {
+test('excludes props while keeping self-closing delimiters', async () => {
   const project = createProject({
     'Page.tsx': [
       "import Button from './Button';",
@@ -127,24 +124,23 @@ void test('excludes props while keeping self-closing delimiters', () => {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('Page.tsx')
     const source = project.readFile('Page.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       source,
       project.signature('Page.tsx'),
     )
 
-    assert.deepEqual(
+    expect(
       usages.map((usage) =>
         usage.ranges.map((range) => source.slice(range.start, range.end)),
       ),
-      [['<Button', '/>']],
-    )
+    ).toEqual([['<Button', '/' + '>']])
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('treats locally declared components as the current file kind', () => {
+test('treats locally declared components as the current file kind', async () => {
   const project = createProject({
     'Card.tsx': [
       "'use client';",
@@ -160,21 +156,21 @@ void test('treats locally declared components as the current file kind', () => {
   try {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('Card.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       project.readFile('Card.tsx'),
       project.signature('Card.tsx'),
     )
 
-    assert.equal(usages.length, 1)
-    assert.equal(usages[0]?.kind, 'client')
-    assert.equal(usages[0]?.tagName, 'Action')
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('Action')
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('resolves tsconfig path aliases when mapping component types', () => {
+test('resolves tsconfig path aliases when mapping component types', async () => {
   const project = createProject({
     'tsconfig.json': JSON.stringify(
       {
@@ -208,21 +204,66 @@ void test('resolves tsconfig path aliases when mapping component types', () => {
   try {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('src/Page.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       project.readFile('src/Page.tsx'),
       project.signature('src/Page.tsx'),
     )
 
-    assert.equal(usages.length, 1)
-    assert.equal(usages[0]?.kind, 'client')
-    assert.match(usages[0]?.sourceFilePath ?? '', /src[\\/]Button\.tsx$/u)
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.sourceFilePath ?? '').toMatch(/src[\\/]Button\.tsx$/u)
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('clear() resets all caches and re-analyses from scratch', () => {
+test('invalidateFile() re-evaluates kind after imported file changes', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import Button from './Button';",
+      '',
+      'export default function Page() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+    'Button.tsx': [
+      'export default function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const pagePath = project.filePath('Page.tsx')
+    const pageSource = project.readFile('Page.tsx')
+
+    const before = await analyzer.analyzeDocument(
+      pagePath,
+      pageSource,
+      project.signature('Page.tsx'),
+    )
+    expect(before[0]?.kind).toBe('server')
+
+    fs.writeFileSync(
+      project.filePath('Button.tsx'),
+      "'use client';\nexport default function Button() { return <button />; }",
+    )
+    analyzer.invalidateFile(project.filePath('Button.tsx'))
+
+    const after = await analyzer.analyzeDocument(
+      pagePath,
+      pageSource,
+      project.signature('Page.tsx'),
+    )
+    expect(after[0]?.kind).toBe('client')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('clear() resets all caches and re-analyses from scratch', async () => {
   const project = createProject({
     'Page.tsx': [
       "import Button from './Button';",
@@ -246,21 +287,21 @@ void test('clear() resets all caches and re-analyses from scratch', () => {
     const source = project.readFile('Page.tsx')
     const sig = project.signature('Page.tsx')
 
-    const before = analyzer.analyzeDocument(filePath, source, sig)
-    assert.equal(before.length, 1)
-    assert.equal(before[0]?.kind, 'client')
+    const before = await analyzer.analyzeDocument(filePath, source, sig)
+    expect(before.length).toBe(1)
+    expect(before[0]?.kind).toBe('client')
 
     analyzer.clear()
 
-    const after = analyzer.analyzeDocument(filePath, source, sig)
-    assert.equal(after.length, 1)
-    assert.equal(after[0]?.kind, 'client')
+    const after = await analyzer.analyzeDocument(filePath, source, sig)
+    expect(after.length).toBe(1)
+    expect(after[0]?.kind).toBe('client')
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('recognizes forwardRef-wrapped local components', () => {
+test('recognizes forwardRef-wrapped local components', async () => {
   const project = createProject({
     'Card.tsx': [
       "'use client';",
@@ -276,21 +317,21 @@ void test('recognizes forwardRef-wrapped local components', () => {
   try {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('Card.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       project.readFile('Card.tsx'),
       project.signature('Card.tsx'),
     )
 
-    assert.equal(usages.length, 1)
-    assert.equal(usages[0]?.kind, 'client')
-    assert.equal(usages[0]?.tagName, 'Button')
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('Button')
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('resolves namespaced JSX like <UI.Button />', () => {
+test('resolves namespaced JSX like <UI.Button />', async () => {
   const project = createProject({
     'Page.tsx': [
       "import * as UI from './ui';",
@@ -312,21 +353,21 @@ void test('resolves namespaced JSX like <UI.Button />', () => {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('Page.tsx')
     const source = project.readFile('Page.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       source,
       project.signature('Page.tsx'),
     )
 
-    assert.equal(usages.length, 1)
-    assert.equal(usages[0]?.kind, 'client')
-    assert.equal(usages[0]?.tagName, 'UI.Button')
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('UI.Button')
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('resolves bare package imports through node_modules', () => {
+test('resolves bare package imports through node_modules', async () => {
   const project = createProject({
     'Page.tsx': [
       "import Button from 'my-ui';",
@@ -351,21 +392,21 @@ void test('resolves bare package imports through node_modules', () => {
   try {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('Page.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       project.readFile('Page.tsx'),
       project.signature('Page.tsx'),
     )
 
-    assert.equal(usages.length, 1)
-    assert.equal(usages[0]?.kind, 'client')
-    assert.equal(usages[0]?.tagName, 'Button')
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('Button')
   } finally {
     project[Symbol.dispose]()
   }
 })
 
-void test('resolves deeply nested namespaced JSX like <UI.Forms.Input />', () => {
+test('resolves deeply nested namespaced JSX like <UI.Forms.Input />', async () => {
   const project = createProject({
     'Page.tsx': [
       "import * as UI from './ui';",
@@ -384,15 +425,15 @@ void test('resolves deeply nested namespaced JSX like <UI.Forms.Input />', () =>
   try {
     const analyzer = createAnalyzer(project.host)
     const filePath = project.filePath('Page.tsx')
-    const usages = analyzer.analyzeDocument(
+    const usages = await analyzer.analyzeDocument(
       filePath,
       project.readFile('Page.tsx'),
       project.signature('Page.tsx'),
     )
 
-    assert.equal(usages.length, 1)
-    assert.equal(usages[0]?.kind, 'client')
-    assert.equal(usages[0]?.tagName, 'UI.Forms.Input')
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('UI.Forms.Input')
   } finally {
     project[Symbol.dispose]()
   }
