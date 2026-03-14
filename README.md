@@ -2,6 +2,10 @@
 
 Visually distinguish Server Components and Client Components in React / Next.js projects directly in your editor.
 
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/devfive.react-component-lens)](https://marketplace.visualstudio.com/items?itemName=devfive.react-component-lens)
+
+![React Component Lens demo](medias/demo.png)
+
 ## Why
 
 In Next.js App Router and React Server Components, the boundary between server and client execution is critical for performance and bundle size. But JSX like `<MyComponent />` gives no visual cue about where it runs.
