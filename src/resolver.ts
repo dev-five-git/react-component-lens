@@ -31,12 +31,24 @@ export class ImportResolver {
     string,
     CachedCompilerOptions
   >()
+  private readonly configPathCache = new Map<string, string | undefined>()
   private readonly resolutionCache = new Map<string, string | undefined>()
+  private readonly hostDirectoryExists: (directoryPath: string) => boolean
+  private readonly hostFileExists: (filePath: string) => boolean
+  private readonly hostReadFile: (filePath: string) => string | undefined
 
-  public constructor(private readonly host: SourceHost) {}
+  public constructor(private readonly host: SourceHost) {
+    this.hostDirectoryExists = (directoryPath) =>
+      host.fileExists(directoryPath) || ts.sys.directoryExists(directoryPath)
+    this.hostFileExists = (filePath) =>
+      host.fileExists(filePath) || ts.sys.fileExists(filePath)
+    this.hostReadFile = (filePath) =>
+      host.readFile(filePath) ?? ts.sys.readFile(filePath)
+  }
 
   public clear(): void {
     this.compilerOptionsCache.clear()
+    this.configPathCache.clear()
     this.resolutionCache.clear()
   }
 
@@ -53,15 +65,11 @@ export class ImportResolver {
 
     const compilerOptions = this.getCompilerOptions(normalizedFromFilePath)
     const resolutionHost: ts.ModuleResolutionHost = {
-      directoryExists: (directoryPath) =>
-        this.host.fileExists(directoryPath) ||
-        ts.sys.directoryExists(directoryPath),
-      fileExists: (filePath) =>
-        this.host.fileExists(filePath) || ts.sys.fileExists(filePath),
+      directoryExists: this.hostDirectoryExists,
+      fileExists: this.hostFileExists,
       getCurrentDirectory: () => path.dirname(normalizedFromFilePath),
       getDirectories: ts.sys.getDirectories,
-      readFile: (filePath) =>
-        this.host.readFile(filePath) ?? ts.sys.readFile(filePath),
+      readFile: this.hostReadFile,
       realpath: ts.sys.realpath,
       useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
     }
@@ -84,7 +92,14 @@ export class ImportResolver {
   }
 
   private getCompilerOptions(filePath: string): ts.CompilerOptions {
-    const configPath = findNearestConfigFile(path.dirname(filePath))
+    const directory = path.dirname(filePath)
+    let configPath: string | undefined
+    if (this.configPathCache.has(directory)) {
+      configPath = this.configPathCache.get(directory)
+    } else {
+      configPath = findNearestConfigFile(directory)
+      this.configPathCache.set(directory, configPath)
+    }
     if (!configPath) {
       return DEFAULT_COMPILER_OPTIONS
     }

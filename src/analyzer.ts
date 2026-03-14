@@ -184,8 +184,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     collectLocalComponentName(statement, localComponentNames)
   }
 
-  const jsxTags: JsxTagReference[] = []
-  visitNode(sourceFile, jsxTags)
+  const jsxTags = collectJsxTags(sourceFile)
 
   return {
     imports,
@@ -321,7 +320,8 @@ function isComponentInitializer(
     return false
   }
 
-  const calleeName = initializer.expression.getText()
+  const callee = initializer.expression
+  const calleeName = ts.isIdentifier(callee) ? callee.text : callee.getText()
   if (!COMPONENT_WRAPPER_NAMES.has(calleeName)) {
     return false
   }
@@ -332,19 +332,23 @@ function isComponentInitializer(
   )
 }
 
-function visitNode(node: ts.Node, jsxTags: JsxTagReference[]): void {
-  if (
-    ts.isJsxOpeningElement(node) ||
-    ts.isJsxSelfClosingElement(node) ||
-    ts.isJsxClosingElement(node)
-  ) {
-    const jsxTag = createJsxTagReference(node, node.getSourceFile())
-    if (jsxTag) {
-      jsxTags.push(jsxTag)
+function collectJsxTags(root: ts.Node): JsxTagReference[] {
+  const jsxTags: JsxTagReference[] = []
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isJsxOpeningElement(node) ||
+      ts.isJsxSelfClosingElement(node) ||
+      ts.isJsxClosingElement(node)
+    ) {
+      const jsxTag = createJsxTagReference(node, node.getSourceFile())
+      if (jsxTag) {
+        jsxTags.push(jsxTag)
+      }
     }
+    ts.forEachChild(node, visit)
   }
-
-  ts.forEachChild(node, (childNode) => visitNode(childNode, jsxTags))
+  ts.forEachChild(root, visit)
+  return jsxTags
 }
 
 function createJsxTagReference(
