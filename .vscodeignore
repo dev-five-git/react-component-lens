@@ -9,3 +9,8 @@ src/**
 test/**
 tsconfig.json
 react-component-lens-plan.md
+.github/**
+AGENTS.md
+bunfig.toml
+README.md
+.changepacks/**
