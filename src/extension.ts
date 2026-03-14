@@ -32,6 +32,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   const refreshVisibleEditors = async (): Promise<void> => {
+    sourceHost.invalidateDocumentCache()
     await Promise.all(
       vscode.window.visibleTextEditors.map((editor) => refreshEditor(editor)),
     )
@@ -255,11 +256,20 @@ class WorkspaceSourceHost implements SourceHost {
     }
   }
 
+  public invalidateDocumentCache(): void {
+    this.documentCache = undefined
+  }
+
+  private documentCache: Map<string, vscode.TextDocument> | undefined
+
   private getOpenDocument(filePath: string): vscode.TextDocument | undefined {
-    const normalizedPath = path.normalize(filePath)
-    return vscode.workspace.textDocuments.find(
-      (document) => path.normalize(document.fileName) === normalizedPath,
-    )
+    if (!this.documentCache) {
+      this.documentCache = new Map()
+      for (const document of vscode.workspace.textDocuments) {
+        this.documentCache.set(path.normalize(document.fileName), document)
+      }
+    }
+    return this.documentCache.get(path.normalize(filePath))
   }
 }
 

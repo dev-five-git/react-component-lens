@@ -135,14 +135,19 @@ export class ComponentLensAnalyzer {
   }
 
   private async getFileComponentKind(filePath: string): Promise<ComponentKind> {
-    const [sourceText, signature] = await Promise.all([
-      this.host.readFileAsync
-        ? this.host.readFileAsync(filePath)
-        : this.host.readFile(filePath),
-      this.host.getSignatureAsync
-        ? this.host.getSignatureAsync(filePath)
-        : this.host.getSignature(filePath),
-    ])
+    let sourceText: string | undefined
+    let signature: string | undefined
+
+    if (this.host.readFileAsync) {
+      ;[sourceText, signature] = await Promise.all([
+        this.host.readFileAsync(filePath),
+        this.host.getSignatureAsync!(filePath),
+      ])
+    } else {
+      sourceText = this.host.readFile(filePath)
+      signature = this.host.getSignature(filePath)
+    }
+
     if (sourceText === undefined || signature === undefined) {
       return 'unknown'
     }
@@ -205,14 +210,15 @@ function collectImportBindings(
     return
   }
 
-  const source = statement.moduleSpecifier.text
   const importClause = statement.importClause
   if (!importClause) {
     return
   }
 
+  const binding: ImportBinding = { source: statement.moduleSpecifier.text }
+
   if (importClause.name) {
-    imports.set(importClause.name.text, { source })
+    imports.set(importClause.name.text, binding)
   }
 
   const namedBindings = importClause.namedBindings
@@ -221,12 +227,12 @@ function collectImportBindings(
   }
 
   if (ts.isNamespaceImport(namedBindings)) {
-    imports.set(namedBindings.name.text, { source })
+    imports.set(namedBindings.name.text, binding)
     return
   }
 
   for (const element of namedBindings.elements) {
-    imports.set(element.name.text, { source })
+    imports.set(element.name.text, binding)
   }
 }
 
@@ -332,7 +338,7 @@ function isComponentInitializer(
   )
 }
 
-function collectJsxTags(root: ts.Node): JsxTagReference[] {
+function collectJsxTags(sourceFile: ts.SourceFile): JsxTagReference[] {
   const jsxTags: JsxTagReference[] = []
   const visit = (node: ts.Node): void => {
     if (
@@ -340,14 +346,14 @@ function collectJsxTags(root: ts.Node): JsxTagReference[] {
       ts.isJsxSelfClosingElement(node) ||
       ts.isJsxClosingElement(node)
     ) {
-      const jsxTag = createJsxTagReference(node, node.getSourceFile())
+      const jsxTag = createJsxTagReference(node, sourceFile)
       if (jsxTag) {
         jsxTags.push(jsxTag)
       }
     }
     ts.forEachChild(node, visit)
   }
-  ts.forEachChild(root, visit)
+  ts.forEachChild(sourceFile, visit)
   return jsxTags
 }
 

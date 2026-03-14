@@ -56,7 +56,7 @@ export class ImportResolver {
     fromFilePath: string,
     specifier: string,
   ): string | undefined {
-    const normalizedFromFilePath = normalizePath(fromFilePath)
+    const normalizedFromFilePath = path.normalize(fromFilePath)
     const cacheKey = `${normalizedFromFilePath}::${specifier}`
     const cached = this.resolutionCache.get(cacheKey)
     if (cached !== undefined || this.resolutionCache.has(cacheKey)) {
@@ -86,7 +86,7 @@ export class ImportResolver {
       return undefined
     }
 
-    const resolvedFilePath = normalizePath(result.resolvedFileName)
+    const resolvedFilePath = path.normalize(result.resolvedFileName)
     this.resolutionCache.set(cacheKey, resolvedFilePath)
     return resolvedFilePath
   }
@@ -137,19 +137,17 @@ export class ImportResolver {
 }
 
 function findNearestConfigFile(startDirectory: string): string | undefined {
-  let currentDirectory = normalizePath(startDirectory)
+  let currentDirectory = path.normalize(startDirectory)
 
   for (;;) {
     for (const configFileName of CONFIG_FILE_NAMES) {
-      const candidatePath = normalizePath(
-        path.join(currentDirectory, configFileName),
-      )
+      const candidatePath = path.join(currentDirectory, configFileName)
       if (ts.sys.fileExists(candidatePath)) {
         return candidatePath
       }
     }
 
-    const parentDirectory = normalizePath(path.dirname(currentDirectory))
+    const parentDirectory = path.dirname(currentDirectory)
     if (parentDirectory === currentDirectory) {
       return undefined
     }
@@ -159,14 +157,9 @@ function findNearestConfigFile(startDirectory: string): string | undefined {
 }
 
 function isSupportedSourceFile(filePath: string): boolean {
-  const normalizedFilePath = normalizePath(filePath)
-  if (normalizedFilePath.endsWith('.d.ts')) {
+  if (filePath.endsWith('.d.ts')) {
     return false
   }
 
-  return SOURCE_EXTENSIONS.has(path.extname(normalizedFilePath).toLowerCase())
-}
-
-function normalizePath(filePath: string): string {
-  return path.normalize(filePath)
+  return SOURCE_EXTENSIONS.has(path.extname(filePath).toLowerCase())
 }
