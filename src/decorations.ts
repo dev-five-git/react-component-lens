@@ -33,7 +33,8 @@ export class LensDecorations implements vscode.Disposable {
     const clientHoverCache = new Map<string, vscode.MarkdownString>()
     const serverHoverCache = new Map<string, vscode.MarkdownString>()
 
-    for (const usage of usages) {
+    for (let i = 0; i < usages.length; i++) {
+      const usage = usages[i]!
       const isClient = usage.kind === 'client'
       const hoverMap = isClient ? clientHoverCache : serverHoverCache
       let hoverMessage = hoverMap.get(usage.sourceFilePath)
@@ -47,8 +48,10 @@ export class LensDecorations implements vscode.Disposable {
       }
 
       const target = isClient ? clientDecorations : serverDecorations
+      const ranges = usage.ranges
 
-      for (const range of usage.ranges) {
+      for (let j = 0; j < ranges.length; j++) {
+        const range = ranges[j]!
         target.push({
           hoverMessage,
           range: new vscode.Range(

@@ -103,10 +103,12 @@ export class ComponentLensAnalyzer {
     }
 
     const usages: ComponentUsage[] = []
-    const resolvedPaths = new Map<string, string>()
-    const componentKinds = new Map<string, ComponentKind>()
+    let resolvedPaths: Map<string, string> | undefined
+    let componentKinds: Map<string, ComponentKind> | undefined
 
     if ((scope.element || scope.import) && analysis.imports.size > 0) {
+      resolvedPaths = new Map()
+      componentKinds = new Map()
       const uniqueFilePaths = new Set<string>()
 
       for (const [lookupName, entry] of analysis.imports) {
@@ -127,17 +129,21 @@ export class ComponentLensAnalyzer {
         }
       }
 
-      await Promise.all(
-        Array.from(uniqueFilePaths, (resolvedPath) =>
-          this.getFileComponentKind(resolvedPath).then((kind) => {
-            componentKinds.set(resolvedPath, kind)
-          }),
-        ),
-      )
+      if (uniqueFilePaths.size > 0) {
+        await Promise.all(
+          Array.from(uniqueFilePaths, (resolvedPath) =>
+            this.getFileComponentKind(resolvedPath).then((kind) => {
+              componentKinds!.set(resolvedPath, kind)
+            }),
+          ),
+        )
+      }
     }
 
     if (scope.element) {
-      for (const jsxTag of analysis.jsxTags) {
+      const jsxTags = analysis.jsxTags
+      for (let i = 0; i < jsxTags.length; i++) {
+        const jsxTag = jsxTags[i]!
         const localComponent = analysis.localComponents.get(jsxTag.lookupName)
         if (localComponent) {
           usages.push({
@@ -149,12 +155,16 @@ export class ComponentLensAnalyzer {
           continue
         }
 
+        if (!resolvedPaths) {
+          continue
+        }
+
         const resolvedFilePath = resolvedPaths.get(jsxTag.lookupName)
         if (!resolvedFilePath) {
           continue
         }
 
-        const componentKind = componentKinds.get(resolvedFilePath)
+        const componentKind = componentKinds!.get(resolvedFilePath)
         if (!componentKind || componentKind === 'unknown') {
           continue
         }
@@ -168,14 +178,14 @@ export class ComponentLensAnalyzer {
       }
     }
 
-    if (scope.import) {
+    if (scope.import && resolvedPaths) {
       for (const [name, entry] of analysis.imports) {
         const resolvedFilePath = resolvedPaths.get(name)
         if (!resolvedFilePath) {
           continue
         }
 
-        const componentKind = componentKinds.get(resolvedFilePath)
+        const componentKind = componentKinds!.get(resolvedFilePath)
         if (!componentKind || componentKind === 'unknown') {
           continue
         }
@@ -206,8 +216,10 @@ export class ComponentLensAnalyzer {
         Exclude<ComponentKind, 'unknown'>
       >()
       const deferredDeclarations: TypeIdentifier[] = []
+      const typeIds = analysis.typeIdentifiers
 
-      for (const typeId of analysis.typeIdentifiers) {
+      for (let i = 0; i < typeIds.length; i++) {
+        const typeId = typeIds[i]!
         if (typeId.enclosingComponent) {
           const kind =
             analysis.localComponents.get(typeId.enclosingComponent)?.kind ??
@@ -226,7 +238,8 @@ export class ComponentLensAnalyzer {
         }
       }
 
-      for (const typeId of deferredDeclarations) {
+      for (let i = 0; i < deferredDeclarations.length; i++) {
+        const typeId = deferredDeclarations[i]!
         usages.push({
           kind: typeUsageKinds.get(typeId.name) ?? analysis.ownComponentKind,
           ranges: typeId.ranges,
@@ -237,7 +250,9 @@ export class ComponentLensAnalyzer {
     }
 
     if (scope.export) {
-      for (const exportRef of analysis.exportReferences) {
+      const exportRefs = analysis.exportReferences
+      for (let i = 0; i < exportRefs.length; i++) {
+        const exportRef = exportRefs[i]!
         usages.push({
           kind: analysis.ownComponentKind,
           ranges: exportRef.ranges,
@@ -360,13 +375,10 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
 
   for (; statementIndex < sourceFile.statements.length; statementIndex++) {
     const statement = sourceFile.statements[statementIndex]!
-    if (
-      !ts.isExpressionStatement(statement) ||
-      !ts.isStringLiteral(statement.expression)
-    ) {
-      break
-    }
-    if (statement.expression.text === 'use client') {
+    if (statement.kind !== SK_ExprStmt) break
+    const expr = (statement as ts.ExpressionStatement).expression
+    if (expr.kind !== SK_StringLiteral) break
+    if ((expr as ts.StringLiteral).text === 'use client') {
       ownComponentKind = 'client'
       statementIndex++
       break
@@ -376,121 +388,124 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
   for (; statementIndex < sourceFile.statements.length; statementIndex++) {
     const statement = sourceFile.statements[statementIndex]!
 
-    if (
-      ts.isImportDeclaration(statement) &&
-      ts.isStringLiteral(statement.moduleSpecifier)
-    ) {
-      const source = statement.moduleSpecifier.text
-      const importClause = statement.importClause
-      if (importClause) {
-        if (importClause.name) {
-          addImport(importClause.name, source)
-        }
-        const namedBindings = importClause.namedBindings
-        if (namedBindings) {
-          if (ts.isNamespaceImport(namedBindings)) {
-            addImport(namedBindings.name, source)
-          } else {
-            for (const element of namedBindings.elements) {
-              addImport(element.name, source)
+    switch (statement.kind) {
+      case SK_ImportDecl: {
+        const importStmt = statement as ts.ImportDeclaration
+        if (importStmt.moduleSpecifier.kind === SK_StringLiteral) {
+          const source = (importStmt.moduleSpecifier as ts.StringLiteral).text
+          const importClause = importStmt.importClause
+          if (importClause) {
+            if (importClause.name) {
+              addImport(importClause.name, source)
+            }
+            const namedBindings = importClause.namedBindings
+            if (namedBindings) {
+              if (namedBindings.kind === SK_NamespaceImport) {
+                addImport((namedBindings as ts.NamespaceImport).name, source)
+              } else {
+                const elements = (namedBindings as ts.NamedImports).elements
+                for (let j = 0; j < elements.length; j++) {
+                  addImport(elements[j]!.name, source)
+                }
+              }
             }
           }
         }
+        break
       }
-      continue
-    }
-
-    if (
-      ts.isFunctionDeclaration(statement) &&
-      statement.name &&
-      isComponentIdentifier(statement.name.text)
-    ) {
-      registerComponent(statement.name.text, statement.name, statement)
-      if (hasAsyncModifier(statement.modifiers)) {
-        asyncComponents.add(statement.name.text)
-      }
-      continue
-    }
-
-    if (
-      ts.isClassDeclaration(statement) &&
-      statement.name &&
-      isComponentIdentifier(statement.name.text)
-    ) {
-      registerComponent(statement.name.text, statement.name, statement)
-      continue
-    }
-
-    if (
-      (ts.isInterfaceDeclaration(statement) ||
-        ts.isTypeAliasDeclaration(statement)) &&
-      isComponentIdentifier(statement.name.text)
-    ) {
-      typeIdentifiers.push({
-        enclosingComponent: undefined,
-        name: statement.name.text,
-        ranges: [nodeRange(statement.name)],
-      })
-      continue
-    }
-
-    if (ts.isExportDeclaration(statement)) {
-      if (statement.exportClause && ts.isNamedExports(statement.exportClause)) {
-        for (const element of statement.exportClause.elements) {
-          if (isComponentIdentifier(element.name.text)) {
-            exportReferences.push({
-              name: element.name.text,
-              ranges: [nodeRange(element.name)],
-            })
+      case SK_FunctionDecl: {
+        const funcDecl = statement as ts.FunctionDeclaration
+        if (funcDecl.name && isComponentIdentifier(funcDecl.name.text)) {
+          registerComponent(funcDecl.name.text, funcDecl.name, funcDecl)
+          if (hasAsyncModifier(funcDecl.modifiers)) {
+            asyncComponents.add(funcDecl.name.text)
           }
         }
+        break
       }
-      continue
-    }
-
-    if (
-      ts.isExportAssignment(statement) &&
-      !statement.isExportEquals &&
-      ts.isIdentifier(statement.expression) &&
-      isComponentIdentifier(statement.expression.text)
-    ) {
-      exportReferences.push({
-        name: statement.expression.text,
-        ranges: [nodeRange(statement.expression)],
-      })
-      continue
-    }
-
-    if (ts.isVariableStatement(statement)) {
-      for (const declaration of statement.declarationList.declarations) {
+      case SK_ClassDecl: {
+        const classDecl = statement as ts.ClassDeclaration
+        if (classDecl.name && isComponentIdentifier(classDecl.name.text)) {
+          registerComponent(classDecl.name.text, classDecl.name, classDecl)
+        }
+        break
+      }
+      case SK_InterfaceDecl:
+      case SK_TypeAliasDecl: {
+        const namedStmt = statement as
+          | ts.InterfaceDeclaration
+          | ts.TypeAliasDeclaration
+        if (isComponentIdentifier(namedStmt.name.text)) {
+          typeIdentifiers.push({
+            enclosingComponent: undefined,
+            name: namedStmt.name.text,
+            ranges: [nodeRange(namedStmt.name)],
+          })
+        }
+        break
+      }
+      case SK_ExportDecl: {
+        const exportDecl = statement as ts.ExportDeclaration
         if (
-          !ts.isIdentifier(declaration.name) ||
-          !isComponentIdentifier(declaration.name.text) ||
-          !declaration.initializer
+          exportDecl.exportClause &&
+          exportDecl.exportClause.kind === SK_NamedExports
         ) {
-          continue
-        }
-
-        if (declaration.initializer.kind === SK_ClassExpr) {
-          registerComponent(
-            declaration.name.text,
-            declaration.name,
-            declaration,
-          )
-          continue
-        }
-
-        const fn = getComponentFunction(declaration.initializer)
-        if (fn) {
-          registerComponent(
-            declaration.name.text,
-            declaration.name,
-            declaration,
-          )
-          if (hasAsyncModifier(fn.modifiers)) {
-            asyncComponents.add(declaration.name.text)
+          const elements = (exportDecl.exportClause as ts.NamedExports).elements
+          for (let j = 0; j < elements.length; j++) {
+            const element = elements[j]!
+            if (isComponentIdentifier(element.name.text)) {
+              exportReferences.push({
+                name: element.name.text,
+                ranges: [nodeRange(element.name)],
+              })
+            }
           }
         }
+        break
+      }
+      case SK_ExportAssignment: {
+        const exportAssign = statement as ts.ExportAssignment
+        if (
+          !exportAssign.isExportEquals &&
+          exportAssign.expression.kind === SK_Identifier &&
+          isComponentIdentifier((exportAssign.expression as ts.Identifier).text)
+        ) {
+          exportReferences.push({
+            name: (exportAssign.expression as ts.Identifier).text,
+            ranges: [nodeRange(exportAssign.expression)],
+          })
+        }
+        break
+      }
+      case SK_VariableStmt: {
+        const varStmt = statement as ts.VariableStatement
+        const declarations = varStmt.declarationList.declarations
+        for (let j = 0; j < declarations.length; j++) {
+          const declaration = declarations[j]!
+          if (
+            declaration.name.kind !== SK_Identifier ||
+            !isComponentIdentifier((declaration.name as ts.Identifier).text) ||
+            !declaration.initializer
+          ) {
+            continue
+          }
+
+          const declName = (declaration.name as ts.Identifier).text
+
+          if (declaration.initializer.kind === SK_ClassExpr) {
+            registerComponent(declName, declaration.name, declaration)
+            continue
+          }
+
+          const fn = getComponentFunction(declaration.initializer)
+          if (fn) {
+            registerComponent(declName, declaration.name, declaration)
+            if (hasAsyncModifier(fn.modifiers)) {
+              asyncComponents.add(declName)
+            }
+          }
+        }
+        break
       }
     }
   }
@@ -535,6 +550,13 @@ const SK_ClassExpr = ts.SyntaxKind.ClassExpression
 const SK_Block = ts.SyntaxKind.Block
 const SK_ExprStmt = ts.SyntaxKind.ExpressionStatement
 const SK_StringLiteral = ts.SyntaxKind.StringLiteral
+const SK_ClassDecl = ts.SyntaxKind.ClassDeclaration
+const SK_InterfaceDecl = ts.SyntaxKind.InterfaceDeclaration
+const SK_TypeAliasDecl = ts.SyntaxKind.TypeAliasDeclaration
+const SK_ExportAssignment = ts.SyntaxKind.ExportAssignment
+const SK_VariableStmt = ts.SyntaxKind.VariableStatement
+const SK_NamespaceImport = ts.SyntaxKind.NamespaceImport
+const SK_NamedExports = ts.SyntaxKind.NamedExports
 
 function isComponentIdentifier(name: string): boolean {
   const code = name.charCodeAt(0)
@@ -614,7 +636,8 @@ function collectSourceElements(
   const jsxTags: JsxTagReference[] = []
 
   const componentByPos = new Map<number, { end: number; name: string }>()
-  for (const range of componentRanges) {
+  for (let i = 0; i < componentRanges.length; i++) {
+    const range = componentRanges[i]!
     componentByPos.set(range.pos, range)
   }
 
@@ -626,7 +649,8 @@ function collectSourceElements(
     perComponentFuncs = new Map()
     perComponentRefs = new Map()
     componentsWithInlineFn = new Set()
-    for (const range of componentRanges) {
+    for (let i = 0; i < componentRanges.length; i++) {
+      const range = componentRanges[i]!
       if (!asyncComponents.has(range.name)) {
         perComponentFuncs.set(range.name, new Map())
         perComponentRefs.set(range.name, [])
@@ -761,7 +785,14 @@ function collectSourceElements(
       continue
     }
     const refs = perComponentRefs!.get(name)!
-    if (refs.some((ref) => funcs.has(ref) && !funcs.get(ref))) {
+    let hasClientRef = false
+    for (let i = 0; i < refs.length; i++) {
+      if (funcs.get(refs[i]!) === false) {
+        hasClientRef = true
+        break
+      }
+    }
+    if (hasClientRef) {
       localComponents.get(name)!.kind = 'client'
     }
   }
