@@ -28,29 +28,35 @@ export class LensDecorations implements vscode.Disposable {
   public apply(editor: vscode.TextEditor, usages: ComponentUsage[]): void {
     const clientDecorations: vscode.DecorationOptions[] = []
     const serverDecorations: vscode.DecorationOptions[] = []
-    const editorDir = path.dirname(editor.document.uri.fsPath)
-    const hoverCache = new Map<string, vscode.MarkdownString>()
+    const document = editor.document
+    const editorDir = path.dirname(document.uri.fsPath)
+    const clientHoverCache = new Map<string, vscode.MarkdownString>()
+    const serverHoverCache = new Map<string, vscode.MarkdownString>()
 
-    for (const usage of usages) {
-      let hoverMessage = hoverCache.get(usage.sourceFilePath)
+    for (let i = 0; i < usages.length; i++) {
+      const usage = usages[i]!
+      const isClient = usage.kind === 'client'
+      const hoverMap = isClient ? clientHoverCache : serverHoverCache
+      let hoverMessage = hoverMap.get(usage.sourceFilePath)
       if (!hoverMessage) {
         const displayPath = toDisplayPath(editorDir, usage.sourceFilePath)
-        const label = usage.kind === 'client' ? 'Client' : 'Server'
+        const label = isClient ? 'Client' : 'Server'
         hoverMessage = new vscode.MarkdownString(
           `${label} component from \`${displayPath}\``,
         )
-        hoverCache.set(usage.sourceFilePath, hoverMessage)
+        hoverMap.set(usage.sourceFilePath, hoverMessage)
       }
 
-      const target =
-        usage.kind === 'client' ? clientDecorations : serverDecorations
+      const target = isClient ? clientDecorations : serverDecorations
+      const ranges = usage.ranges
 
-      for (const range of usage.ranges) {
+      for (let j = 0; j < ranges.length; j++) {
+        const range = ranges[j]!
         target.push({
           hoverMessage,
           range: new vscode.Range(
-            editor.document.positionAt(range.start),
-            editor.document.positionAt(range.end),
+            document.positionAt(range.start),
+            document.positionAt(range.end),
           ),
         })
       }

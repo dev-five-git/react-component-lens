@@ -49,6 +49,31 @@
           "maximum": 2000,
           "description": "Debounce delay, in milliseconds, before recomputing decorations after workspace changes."
         },
+        "reactComponentLens.scope.element": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight JSX element tags (<Component />, </Component>)."
+        },
+        "reactComponentLens.scope.declaration": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight component declaration names (function, class, variable)."
+        },
+        "reactComponentLens.scope.export": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight component names in export declarations (export { Component }, export default Component)."
+        },
+        "reactComponentLens.scope.import": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight component names in import declarations (import { Component } from ...)."
+        },
+        "reactComponentLens.scope.type": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight TypeScript interface and type alias declaration names."
+        },
         "reactComponentLens.highlightColors": {
           "type": "object",
           "default": {

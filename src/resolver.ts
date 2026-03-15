@@ -19,7 +19,6 @@ const DEFAULT_COMPILER_OPTIONS: ts.CompilerOptions = {
 }
 
 const CONFIG_FILE_NAMES = ['tsconfig.json', 'jsconfig.json'] as const
-const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx'])
 
 interface CachedCompilerOptions {
   options: ts.CompilerOptions
@@ -32,11 +31,15 @@ export class ImportResolver {
     CachedCompilerOptions
   >()
   private readonly configPathCache = new Map<string, string | undefined>()
-  private readonly resolutionCache = new Map<string, string | undefined>()
+  private readonly resolutionCache = new Map<
+    string,
+    Map<string, string | undefined>
+  >()
   private readonly resolutionHost: ts.ModuleResolutionHost
   private currentDirectory = ''
   private lastFromPath = ''
   private lastNormalizedFromPath = ''
+  private lastFromDirectory = ''
 
   public constructor(private readonly host: SourceHost) {
     this.resolutionHost = {
@@ -59,6 +62,7 @@ export class ImportResolver {
     this.resolutionCache.clear()
     this.lastFromPath = ''
     this.lastNormalizedFromPath = ''
+    this.lastFromDirectory = ''
   }
 
   public resolveImport(
@@ -72,16 +76,22 @@ export class ImportResolver {
       normalizedFromFilePath = path.normalize(fromFilePath)
       this.lastFromPath = fromFilePath
       this.lastNormalizedFromPath = normalizedFromFilePath
+      this.lastFromDirectory = path.dirname(normalizedFromFilePath)
     }
 
-    const cacheKey = `${normalizedFromFilePath}::${specifier}`
-    const cached = this.resolutionCache.get(cacheKey)
-    if (cached !== undefined || this.resolutionCache.has(cacheKey)) {
-      return cached
+    let fileCache = this.resolutionCache.get(normalizedFromFilePath)
+    if (fileCache) {
+      const cached = fileCache.get(specifier)
+      if (cached !== undefined || fileCache.has(specifier)) {
+        return cached
+      }
+    } else {
+      fileCache = new Map()
+      this.resolutionCache.set(normalizedFromFilePath, fileCache)
     }
 
-    const compilerOptions = this.getCompilerOptions(normalizedFromFilePath)
-    this.currentDirectory = path.dirname(normalizedFromFilePath)
+    const compilerOptions = this.getCompilerOptions(this.lastFromDirectory)
+    this.currentDirectory = this.lastFromDirectory
 
     const result = ts.resolveModuleName(
       specifier,
@@ -91,21 +101,18 @@ export class ImportResolver {
     ).resolvedModule
 
     if (!result || !isSupportedSourceFile(result.resolvedFileName)) {
-      this.resolutionCache.set(cacheKey, undefined)
+      fileCache.set(specifier, undefined)
       return undefined
     }
 
     const resolvedFilePath = path.normalize(result.resolvedFileName)
-    this.resolutionCache.set(cacheKey, resolvedFilePath)
+    fileCache.set(specifier, resolvedFilePath)
     return resolvedFilePath
   }
 
-  private getCompilerOptions(filePath: string): ts.CompilerOptions {
-    const directory = path.dirname(filePath)
-    let configPath: string | undefined
-    if (this.configPathCache.has(directory)) {
-      configPath = this.configPathCache.get(directory)
-    } else {
+  private getCompilerOptions(directory: string): ts.CompilerOptions {
+    let configPath = this.configPathCache.get(directory)
+    if (configPath === undefined && !this.configPathCache.has(directory)) {
       configPath = findNearestConfigFile(directory)
       this.configPathCache.set(directory, configPath)
     }
@@ -146,7 +153,7 @@ export class ImportResolver {
 }
 
 function findNearestConfigFile(startDirectory: string): string | undefined {
-  let currentDirectory = path.normalize(startDirectory)
+  let currentDirectory = startDirectory
 
   for (;;) {
     for (const configFileName of CONFIG_FILE_NAMES) {
@@ -170,5 +177,10 @@ function isSupportedSourceFile(filePath: string): boolean {
     return false
   }
 
-  return SOURCE_EXTENSIONS.has(path.extname(filePath).toLowerCase())
+  return (
+    filePath.endsWith('.ts') ||
+    filePath.endsWith('.tsx') ||
+    filePath.endsWith('.js') ||
+    filePath.endsWith('.jsx')
+  )
 }
