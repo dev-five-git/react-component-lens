@@ -32,14 +32,15 @@ export class LensDecorations implements vscode.Disposable {
     const hoverCache = new Map<string, vscode.MarkdownString>()
 
     for (const usage of usages) {
-      let hoverMessage = hoverCache.get(usage.sourceFilePath)
+      const cacheKey = `${usage.kind}:${usage.sourceFilePath}`
+      let hoverMessage = hoverCache.get(cacheKey)
       if (!hoverMessage) {
         const displayPath = toDisplayPath(editorDir, usage.sourceFilePath)
         const label = usage.kind === 'client' ? 'Client' : 'Server'
         hoverMessage = new vscode.MarkdownString(
           `${label} component from \`${displayPath}\``,
         )
-        hoverCache.set(usage.sourceFilePath, hoverMessage)
+        hoverCache.set(cacheKey, hoverMessage)
       }
 
       const target =

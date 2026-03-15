@@ -279,6 +279,8 @@ class WorkspaceSourceHost implements SourceHost {
   }
 
   private documentCache: Map<string, vscode.TextDocument> | undefined
+  private lastFilePath = ''
+  private lastNormalizedPath = ''
 
   private getOpenDocument(filePath: string): vscode.TextDocument | undefined {
     if (!this.documentCache) {
@@ -287,7 +289,12 @@ class WorkspaceSourceHost implements SourceHost {
         this.documentCache.set(path.normalize(document.fileName), document)
       }
     }
-    return this.documentCache.get(path.normalize(filePath))
+
+    if (filePath !== this.lastFilePath) {
+      this.lastFilePath = filePath
+      this.lastNormalizedPath = path.normalize(filePath)
+    }
+    return this.documentCache.get(this.lastNormalizedPath)
   }
 }
 
