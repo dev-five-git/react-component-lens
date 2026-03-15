@@ -36,17 +36,17 @@ interface CachedDirective {
 
 interface NamedRange {
   name: string
-  range: DecorationSegment
+  ranges: DecorationSegment[]
 }
 
 interface LocalComponent {
   kind: Exclude<ComponentKind, 'unknown'>
-  range: DecorationSegment
+  ranges: DecorationSegment[]
 }
 
 interface FileAnalysis {
   exportReferences: NamedRange[]
-  imports: Map<string, { range: DecorationSegment; source: string }>
+  imports: Map<string, { ranges: DecorationSegment[]; source: string }>
   jsxTags: JsxTagReference[]
   localComponents: Map<string, LocalComponent>
   ownComponentKind: Exclude<ComponentKind, 'unknown'>
@@ -62,7 +62,7 @@ interface JsxTagReference {
 interface TypeIdentifier {
   enclosingComponent: string | undefined
   name: string
-  range: DecorationSegment
+  ranges: DecorationSegment[]
 }
 
 export class ComponentLensAnalyzer {
@@ -182,7 +182,7 @@ export class ComponentLensAnalyzer {
 
         usages.push({
           kind: componentKind,
-          ranges: [entry.range],
+          ranges: entry.ranges,
           sourceFilePath: resolvedFilePath,
           tagName: name,
         })
@@ -193,7 +193,7 @@ export class ComponentLensAnalyzer {
       for (const [name, component] of analysis.localComponents) {
         usages.push({
           kind: component.kind,
-          ranges: [component.range],
+          ranges: component.ranges,
           sourceFilePath: filePath,
           tagName: name,
         })
@@ -217,7 +217,7 @@ export class ComponentLensAnalyzer {
           }
           usages.push({
             kind,
-            ranges: [typeId.range],
+            ranges: typeId.ranges,
             sourceFilePath: filePath,
             tagName: typeId.name,
           })
@@ -229,7 +229,7 @@ export class ComponentLensAnalyzer {
       for (const typeId of deferredDeclarations) {
         usages.push({
           kind: typeUsageKinds.get(typeId.name) ?? analysis.ownComponentKind,
-          ranges: [typeId.range],
+          ranges: typeId.ranges,
           sourceFilePath: filePath,
           tagName: typeId.name,
         })
@@ -240,7 +240,7 @@ export class ComponentLensAnalyzer {
       for (const exportRef of analysis.exportReferences) {
         usages.push({
           kind: analysis.ownComponentKind,
-          ranges: [exportRef.range],
+          ranges: exportRef.ranges,
           sourceFilePath: filePath,
           tagName: exportRef.name,
         })
@@ -311,7 +311,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
   const exportReferences: NamedRange[] = []
   const imports = new Map<
     string,
-    { range: DecorationSegment; source: string }
+    { ranges: DecorationSegment[]; source: string }
   >()
   const localComponents = new Map<string, LocalComponent>()
   const typeIdentifiers: TypeIdentifier[] = []
@@ -330,7 +330,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
   ): void => {
     localComponents.set(name, {
       kind: ownComponentKind,
-      range: nodeRange(nameNode),
+      ranges: [nodeRange(nameNode)],
     })
     componentRanges.push({
       end: scopeNode.end,
@@ -341,12 +341,18 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
 
   const hasAsyncModifier = (
     modifiers: ts.NodeArray<ts.ModifierLike> | undefined,
-  ): boolean => modifiers?.some((m) => m.kind === ASYNC_KEYWORD) ?? false
+  ): boolean => {
+    if (!modifiers) return false
+    for (let i = 0; i < modifiers.length; i++) {
+      if (modifiers[i]!.kind === ASYNC_KEYWORD) return true
+    }
+    return false
+  }
 
   const addImport = (identifier: ts.Identifier, source: string): void => {
     if (isComponentIdentifier(identifier.text)) {
       imports.set(identifier.text, {
-        range: nodeRange(identifier),
+        ranges: [nodeRange(identifier)],
         source,
       })
     }
@@ -423,7 +429,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
       typeIdentifiers.push({
         enclosingComponent: undefined,
         name: statement.name.text,
-        range: nodeRange(statement.name),
+        ranges: [nodeRange(statement.name)],
       })
       continue
     }
@@ -434,7 +440,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
           if (isComponentIdentifier(element.name.text)) {
             exportReferences.push({
               name: element.name.text,
-              range: nodeRange(element.name),
+              ranges: [nodeRange(element.name)],
             })
           }
         }
@@ -450,7 +456,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     ) {
       exportReferences.push({
         name: statement.expression.text,
-        range: nodeRange(statement.expression),
+        ranges: [nodeRange(statement.expression)],
       })
       continue
     }
@@ -465,7 +471,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
           continue
         }
 
-        if (ts.isClassExpression(declaration.initializer)) {
+        if (declaration.initializer.kind === SK_ClassExpr) {
           registerComponent(
             declaration.name.text,
             declaration.name,
@@ -518,13 +524,17 @@ const SK_TypeReference = ts.SyntaxKind.TypeReference
 const SK_ImportDecl = ts.SyntaxKind.ImportDeclaration
 const SK_EnumDecl = ts.SyntaxKind.EnumDeclaration
 const SK_ExportDecl = ts.SyntaxKind.ExportDeclaration
-
-const COMPONENT_WRAPPER_NAMES = new Set([
-  'forwardRef',
-  'memo',
-  'React.forwardRef',
-  'React.memo',
-])
+const SK_FunctionDecl = ts.SyntaxKind.FunctionDeclaration
+const SK_VariableDecl = ts.SyntaxKind.VariableDeclaration
+const SK_JsxAttribute = ts.SyntaxKind.JsxAttribute
+const SK_JsxExpression = ts.SyntaxKind.JsxExpression
+const SK_ArrowFunction = ts.SyntaxKind.ArrowFunction
+const SK_FunctionExpr = ts.SyntaxKind.FunctionExpression
+const SK_CallExpression = ts.SyntaxKind.CallExpression
+const SK_ClassExpr = ts.SyntaxKind.ClassExpression
+const SK_Block = ts.SyntaxKind.Block
+const SK_ExprStmt = ts.SyntaxKind.ExpressionStatement
+const SK_StringLiteral = ts.SyntaxKind.StringLiteral
 
 function isComponentIdentifier(name: string): boolean {
   const code = name.charCodeAt(0)
@@ -534,18 +544,22 @@ function isComponentIdentifier(name: string): boolean {
 function getComponentFunction(
   initializer: ts.Expression,
 ): ts.ArrowFunction | ts.FunctionExpression | undefined {
-  if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
-    return initializer
+  const kind = initializer.kind
+  if (kind === SK_ArrowFunction || kind === SK_FunctionExpr) {
+    return initializer as ts.ArrowFunction | ts.FunctionExpression
   }
 
-  if (
-    ts.isCallExpression(initializer) &&
-    COMPONENT_WRAPPER_NAMES.has(getCalleeText(initializer.expression))
-  ) {
-    return initializer.arguments.find(
-      (arg): arg is ts.ArrowFunction | ts.FunctionExpression =>
-        ts.isArrowFunction(arg) || ts.isFunctionExpression(arg),
-    )
+  if (kind === SK_CallExpression) {
+    const call = initializer as ts.CallExpression
+    if (isComponentWrapper(call.expression)) {
+      const args = call.arguments
+      for (let i = 0; i < args.length; i++) {
+        const argKind = args[i]!.kind
+        if (argKind === SK_ArrowFunction || argKind === SK_FunctionExpr) {
+          return args[i] as ts.ArrowFunction | ts.FunctionExpression
+        }
+      }
+    }
   }
 
   return undefined
@@ -555,18 +569,17 @@ function hasUseServerDirective(
   fn: ts.ArrowFunction | ts.FunctionDeclaration | ts.FunctionExpression,
 ): boolean {
   const body = fn.body
-  if (!body || !ts.isBlock(body)) {
+  if (!body || body.kind !== SK_Block) {
     return false
   }
 
-  for (const stmt of body.statements) {
-    if (
-      !ts.isExpressionStatement(stmt) ||
-      !ts.isStringLiteral(stmt.expression)
-    ) {
-      break
-    }
-    if (stmt.expression.text === 'use server') {
+  const statements = (body as ts.Block).statements
+  for (let i = 0; i < statements.length; i++) {
+    const stmt = statements[i]!
+    if (stmt.kind !== SK_ExprStmt) break
+    const expr = (stmt as ts.ExpressionStatement).expression
+    if (expr.kind !== SK_StringLiteral) break
+    if ((expr as ts.StringLiteral).text === 'use server') {
       return true
     }
   }
@@ -574,19 +587,20 @@ function hasUseServerDirective(
   return false
 }
 
-function getCalleeText(expression: ts.Expression): string {
-  if (ts.isIdentifier(expression)) {
-    return expression.text
+function isComponentWrapper(expr: ts.Expression): boolean {
+  if (expr.kind === SK_Identifier) {
+    const text = (expr as ts.Identifier).text
+    return text === 'forwardRef' || text === 'memo'
   }
-
-  if (
-    ts.isPropertyAccessExpression(expression) &&
-    ts.isIdentifier(expression.expression)
-  ) {
-    return `${expression.expression.text}.${expression.name.text}`
+  if (expr.kind === SK_PropertyAccess) {
+    const pa = expr as ts.PropertyAccessExpression
+    return (
+      pa.expression.kind === SK_Identifier &&
+      (pa.expression as ts.Identifier).text === 'React' &&
+      (pa.name.text === 'forwardRef' || pa.name.text === 'memo')
+    )
   }
-
-  return ''
+  return false
 }
 
 function collectSourceElements(
@@ -664,14 +678,15 @@ function collectSourceElements(
       }
     } else if (nodeKind === SK_TypeReference) {
       const typeName = (node as ts.TypeReferenceNode).typeName
-      if (ts.isIdentifier(typeName) && isComponentIdentifier(typeName.text)) {
+      if (
+        typeName.kind === SK_Identifier &&
+        isComponentIdentifier((typeName as ts.Identifier).text)
+      ) {
+        const id = typeName as ts.Identifier
         typeIdentifiers.push({
           enclosingComponent: currentComponent,
-          name: typeName.text,
-          range: {
-            end: typeName.end,
-            start: typeName.getStart(sourceFile),
-          },
+          name: id.text,
+          ranges: [{ end: id.end, start: id.getStart(sourceFile) }],
         })
       }
     }
@@ -680,35 +695,49 @@ function collectSourceElements(
       currentComponentTracked &&
       !componentsWithInlineFn!.has(currentComponent!)
     ) {
-      if (ts.isFunctionDeclaration(node) && node.name) {
-        perComponentFuncs!
-          .get(currentComponent!)!
-          .set(node.name.text, hasUseServerDirective(node))
-      } else if (
-        ts.isVariableDeclaration(node) &&
-        ts.isIdentifier(node.name) &&
-        node.initializer &&
-        (ts.isArrowFunction(node.initializer) ||
-          ts.isFunctionExpression(node.initializer))
-      ) {
-        perComponentFuncs!
-          .get(currentComponent!)!
-          .set(node.name.text, hasUseServerDirective(node.initializer))
-      } else if (
-        ts.isJsxAttribute(node) &&
-        node.initializer &&
-        ts.isJsxExpression(node.initializer) &&
-        node.initializer.expression
-      ) {
-        const expr = node.initializer.expression
-
+      if (nodeKind === SK_FunctionDecl) {
+        const fn = node as ts.FunctionDeclaration
+        if (fn.name) {
+          perComponentFuncs!
+            .get(currentComponent!)!
+            .set(fn.name.text, hasUseServerDirective(fn))
+        }
+      } else if (nodeKind === SK_VariableDecl) {
+        const decl = node as ts.VariableDeclaration
         if (
-          (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) &&
-          !hasUseServerDirective(expr)
+          decl.name.kind === SK_Identifier &&
+          decl.initializer &&
+          (decl.initializer.kind === SK_ArrowFunction ||
+            decl.initializer.kind === SK_FunctionExpr)
         ) {
-          componentsWithInlineFn!.add(currentComponent!)
-        } else if (ts.isIdentifier(expr)) {
-          perComponentRefs!.get(currentComponent!)!.push(expr.text)
+          perComponentFuncs!
+            .get(currentComponent!)!
+            .set(
+              (decl.name as ts.Identifier).text,
+              hasUseServerDirective(
+                decl.initializer as ts.ArrowFunction | ts.FunctionExpression,
+              ),
+            )
+        }
+      } else if (nodeKind === SK_JsxAttribute) {
+        const attr = node as ts.JsxAttribute
+        if (attr.initializer && attr.initializer.kind === SK_JsxExpression) {
+          const expr = (attr.initializer as ts.JsxExpression).expression
+          if (expr) {
+            const exprKind = expr.kind
+            if (
+              (exprKind === SK_ArrowFunction || exprKind === SK_FunctionExpr) &&
+              !hasUseServerDirective(
+                expr as ts.ArrowFunction | ts.FunctionExpression,
+              )
+            ) {
+              componentsWithInlineFn!.add(currentComponent!)
+            } else if (exprKind === SK_Identifier) {
+              perComponentRefs!
+                .get(currentComponent!)!
+                .push((expr as ts.Identifier).text)
+            }
+          }
         }
       }
     }
@@ -884,7 +913,16 @@ function hasUseClientDirective(sourceText: string): boolean {
       if (
         i + 11 < len &&
         sourceText.charCodeAt(i + 11) === ch &&
-        sourceText.startsWith('use client', i + 1)
+        sourceText.charCodeAt(i + 1) === 117 &&
+        sourceText.charCodeAt(i + 2) === 115 &&
+        sourceText.charCodeAt(i + 3) === 101 &&
+        sourceText.charCodeAt(i + 4) === 32 &&
+        sourceText.charCodeAt(i + 5) === 99 &&
+        sourceText.charCodeAt(i + 6) === 108 &&
+        sourceText.charCodeAt(i + 7) === 105 &&
+        sourceText.charCodeAt(i + 8) === 101 &&
+        sourceText.charCodeAt(i + 9) === 110 &&
+        sourceText.charCodeAt(i + 10) === 116
       ) {
         return true
       }

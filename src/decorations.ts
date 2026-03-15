@@ -46,8 +46,7 @@ export class LensDecorations implements vscode.Disposable {
         hoverMap.set(usage.sourceFilePath, hoverMessage)
       }
 
-      const target =
-        usage.kind === 'client' ? clientDecorations : serverDecorations
+      const target = isClient ? clientDecorations : serverDecorations
 
       for (const range of usage.ranges) {
         target.push({

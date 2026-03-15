@@ -39,6 +39,7 @@ export class ImportResolver {
   private currentDirectory = ''
   private lastFromPath = ''
   private lastNormalizedFromPath = ''
+  private lastFromDirectory = ''
 
   public constructor(private readonly host: SourceHost) {
     this.resolutionHost = {
@@ -61,6 +62,7 @@ export class ImportResolver {
     this.resolutionCache.clear()
     this.lastFromPath = ''
     this.lastNormalizedFromPath = ''
+    this.lastFromDirectory = ''
   }
 
   public resolveImport(
@@ -74,6 +76,7 @@ export class ImportResolver {
       normalizedFromFilePath = path.normalize(fromFilePath)
       this.lastFromPath = fromFilePath
       this.lastNormalizedFromPath = normalizedFromFilePath
+      this.lastFromDirectory = path.dirname(normalizedFromFilePath)
     }
 
     let fileCache = this.resolutionCache.get(normalizedFromFilePath)
@@ -87,9 +90,8 @@ export class ImportResolver {
       this.resolutionCache.set(normalizedFromFilePath, fileCache)
     }
 
-    const directory = path.dirname(normalizedFromFilePath)
-    const compilerOptions = this.getCompilerOptions(directory)
-    this.currentDirectory = directory
+    const compilerOptions = this.getCompilerOptions(this.lastFromDirectory)
+    this.currentDirectory = this.lastFromDirectory
 
     const result = ts.resolveModuleName(
       specifier,
