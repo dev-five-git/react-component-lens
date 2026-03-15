@@ -1078,6 +1078,109 @@ test('local function reference with use server stays server', async () => {
   }
 })
 
+test('infers client when const function reference passed as prop', async () => {
+  const project = createProject({
+    'Toggle.tsx': [
+      'export function Toggle() {',
+      '  const handleEnter = () => {};',
+      '  return <div onMouseEnter={handleEnter} />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Toggle.tsx')
+    const source = project.readFile('Toggle.tsx')
+    const scope: ScopeConfig = {
+      declaration: true,
+      element: false,
+      export: false,
+      import: false,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Toggle.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('forwardRef component infers client from function props', async () => {
+  const project = createProject({
+    'Button.tsx': [
+      'const Button = forwardRef((props) => {',
+      '  return <button onClick={() => {}} />;',
+      '});',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Button.tsx')
+    const source = project.readFile('Button.tsx')
+    const scope: ScopeConfig = {
+      declaration: true,
+      element: false,
+      export: false,
+      import: false,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Button.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('async arrow component stays server even with function props', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      'const Page = async () => {',
+      '  return <div onClick={() => {}} />;',
+      '};',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const source = project.readFile('Page.tsx')
+    const scope: ScopeConfig = {
+      declaration: true,
+      element: false,
+      export: false,
+      import: false,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Page.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('server')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
 test('arrow component infers client from function props', async () => {
   const project = createProject({
     'Toggle.tsx': [
