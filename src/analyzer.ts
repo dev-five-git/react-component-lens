@@ -106,7 +106,7 @@ export class ComponentLensAnalyzer {
     const resolvedPaths = new Map<string, string>()
     const componentKinds = new Map<string, ComponentKind>()
 
-    if (scope.element || scope.import) {
+    if ((scope.element || scope.import) && analysis.imports.size > 0) {
       const uniqueFilePaths = new Set<string>()
 
       for (const [lookupName, entry] of analysis.imports) {
@@ -251,26 +251,25 @@ export class ComponentLensAnalyzer {
   }
 
   private async getFileComponentKind(filePath: string): Promise<ComponentKind> {
-    let sourceText: string | undefined
-    let signature: string | undefined
+    const signature = this.host.getSignatureAsync
+      ? await this.host.getSignatureAsync(filePath)
+      : this.host.getSignature(filePath)
 
-    if (this.host.readFileAsync) {
-      ;[sourceText, signature] = await Promise.all([
-        this.host.readFileAsync(filePath),
-        this.host.getSignatureAsync!(filePath),
-      ])
-    } else {
-      sourceText = this.host.readFile(filePath)
-      signature = this.host.getSignature(filePath)
-    }
-
-    if (sourceText === undefined || signature === undefined) {
+    if (signature === undefined) {
       return 'unknown'
     }
 
     const cached = this.directiveCache.get(filePath)
     if (cached && cached.signature === signature) {
       return cached.kind
+    }
+
+    const sourceText = this.host.readFileAsync
+      ? await this.host.readFileAsync(filePath)
+      : this.host.readFile(filePath)
+
+    if (sourceText === undefined) {
+      return 'unknown'
     }
 
     const kind: Exclude<ComponentKind, 'unknown'> = hasUseClientDirective(
@@ -308,7 +307,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
   )
 
   const asyncComponents = new Set<string>()
-  const componentRanges: { end: number; name: string; start: number }[] = []
+  const componentRanges: { end: number; name: string; pos: number }[] = []
   const exportReferences: NamedRange[] = []
   const imports = new Map<
     string,
@@ -320,7 +319,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
   let statementIndex = 0
 
   const nodeRange = (node: ts.Node): DecorationSegment => ({
-    end: node.getEnd(),
+    end: node.end,
     start: node.getStart(sourceFile),
   })
 
@@ -334,15 +333,24 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
       range: nodeRange(nameNode),
     })
     componentRanges.push({
-      end: scopeNode.getEnd(),
+      end: scopeNode.end,
       name,
-      start: scopeNode.getStart(sourceFile),
+      pos: scopeNode.pos,
     })
   }
 
   const hasAsyncModifier = (
     modifiers: ts.NodeArray<ts.ModifierLike> | undefined,
   ): boolean => modifiers?.some((m) => m.kind === ASYNC_KEYWORD) ?? false
+
+  const addImport = (identifier: ts.Identifier, source: string): void => {
+    if (isComponentIdentifier(identifier.text)) {
+      imports.set(identifier.text, {
+        range: nodeRange(identifier),
+        source,
+      })
+    }
+  }
 
   for (; statementIndex < sourceFile.statements.length; statementIndex++) {
     const statement = sourceFile.statements[statementIndex]!
@@ -367,27 +375,18 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
       ts.isStringLiteral(statement.moduleSpecifier)
     ) {
       const source = statement.moduleSpecifier.text
-      const addImport = (identifier: ts.Identifier): void => {
-        if (isComponentIdentifier(identifier.text)) {
-          imports.set(identifier.text, {
-            range: nodeRange(identifier),
-            source,
-          })
-        }
-      }
-
       const importClause = statement.importClause
       if (importClause) {
         if (importClause.name) {
-          addImport(importClause.name)
+          addImport(importClause.name, source)
         }
         const namedBindings = importClause.namedBindings
         if (namedBindings) {
           if (ts.isNamespaceImport(namedBindings)) {
-            addImport(namedBindings.name)
+            addImport(namedBindings.name, source)
           } else {
             for (const element of namedBindings.elements) {
-              addImport(element.name)
+              addImport(element.name, source)
             }
           }
         }
@@ -510,6 +509,15 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
 }
 
 const ASYNC_KEYWORD = ts.SyntaxKind.AsyncKeyword
+const SK_Identifier = ts.SyntaxKind.Identifier
+const SK_PropertyAccess = ts.SyntaxKind.PropertyAccessExpression
+const SK_JsxOpening = ts.SyntaxKind.JsxOpeningElement
+const SK_JsxSelfClosing = ts.SyntaxKind.JsxSelfClosingElement
+const SK_JsxClosing = ts.SyntaxKind.JsxClosingElement
+const SK_TypeReference = ts.SyntaxKind.TypeReference
+const SK_ImportDecl = ts.SyntaxKind.ImportDeclaration
+const SK_EnumDecl = ts.SyntaxKind.EnumDeclaration
+const SK_ExportDecl = ts.SyntaxKind.ExportDeclaration
 
 const COMPONENT_WRAPPER_NAMES = new Set([
   'forwardRef',
@@ -583,7 +591,7 @@ function getCalleeText(expression: ts.Expression): string {
 
 function collectSourceElements(
   sourceFile: ts.SourceFile,
-  componentRanges: { end: number; name: string; start: number }[],
+  componentRanges: { end: number; name: string; pos: number }[],
   typeIdentifiers: TypeIdentifier[],
   localComponents: Map<string, LocalComponent>,
   asyncComponents: Set<string>,
@@ -591,9 +599,9 @@ function collectSourceElements(
 ): JsxTagReference[] {
   const jsxTags: JsxTagReference[] = []
 
-  const componentByStart = new Map<number, { end: number; name: string }>()
+  const componentByPos = new Map<number, { end: number; name: string }>()
   for (const range of componentRanges) {
-    componentByStart.set(range.start, range)
+    componentByPos.set(range.pos, range)
   }
 
   let perComponentFuncs: Map<string, Map<string, boolean>> | undefined
@@ -613,50 +621,68 @@ function collectSourceElements(
   }
 
   let currentComponent: string | undefined
+  let currentComponentTracked = false
 
   const visit = (node: ts.Node): void => {
-    const start = node.getStart(sourceFile)
-    const entry = componentByStart.get(start)
-    const entered = entry !== undefined && entry.end === node.getEnd()
+    const nodeKind = node.kind
+
+    if (
+      nodeKind === SK_ImportDecl ||
+      nodeKind === SK_EnumDecl ||
+      nodeKind === SK_ExportDecl
+    ) {
+      return
+    }
+
+    const entry = componentByPos.get(node.pos)
+    const entered = entry !== undefined && entry.end === node.end
 
     let savedComponent: string | undefined
+    let savedTracked = false
     if (entered) {
       savedComponent = currentComponent
+      savedTracked = currentComponentTracked
       currentComponent = entry.name
+      currentComponentTracked = perComponentFuncs?.has(entry.name) ?? false
     }
 
     if (
-      ts.isJsxOpeningElement(node) ||
-      ts.isJsxSelfClosingElement(node) ||
-      ts.isJsxClosingElement(node)
+      nodeKind === SK_JsxOpening ||
+      nodeKind === SK_JsxSelfClosing ||
+      nodeKind === SK_JsxClosing
     ) {
-      const jsxTag = createJsxTagReference(node, sourceFile)
+      const jsxTag = createJsxTagReference(
+        node as
+          | ts.JsxOpeningElement
+          | ts.JsxSelfClosingElement
+          | ts.JsxClosingElement,
+        sourceFile,
+        nodeKind,
+      )
       if (jsxTag) {
         jsxTags.push(jsxTag)
       }
-    } else if (
-      ts.isTypeReferenceNode(node) &&
-      ts.isIdentifier(node.typeName) &&
-      isComponentIdentifier(node.typeName.text)
-    ) {
-      typeIdentifiers.push({
-        enclosingComponent: currentComponent,
-        name: node.typeName.text,
-        range: {
-          end: node.typeName.getEnd(),
-          start: node.typeName.getStart(sourceFile),
-        },
-      })
+    } else if (nodeKind === SK_TypeReference) {
+      const typeName = (node as ts.TypeReferenceNode).typeName
+      if (ts.isIdentifier(typeName) && isComponentIdentifier(typeName.text)) {
+        typeIdentifiers.push({
+          enclosingComponent: currentComponent,
+          name: typeName.text,
+          range: {
+            end: typeName.end,
+            start: typeName.getStart(sourceFile),
+          },
+        })
+      }
     }
 
     if (
-      currentComponent &&
-      perComponentFuncs?.has(currentComponent) &&
-      !componentsWithInlineFn!.has(currentComponent)
+      currentComponentTracked &&
+      !componentsWithInlineFn!.has(currentComponent!)
     ) {
       if (ts.isFunctionDeclaration(node) && node.name) {
-        perComponentFuncs
-          .get(currentComponent)!
+        perComponentFuncs!
+          .get(currentComponent!)!
           .set(node.name.text, hasUseServerDirective(node))
       } else if (
         ts.isVariableDeclaration(node) &&
@@ -665,8 +691,8 @@ function collectSourceElements(
         (ts.isArrowFunction(node.initializer) ||
           ts.isFunctionExpression(node.initializer))
       ) {
-        perComponentFuncs
-          .get(currentComponent)!
+        perComponentFuncs!
+          .get(currentComponent!)!
           .set(node.name.text, hasUseServerDirective(node.initializer))
       } else if (
         ts.isJsxAttribute(node) &&
@@ -680,9 +706,9 @@ function collectSourceElements(
           (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) &&
           !hasUseServerDirective(expr)
         ) {
-          componentsWithInlineFn!.add(currentComponent)
+          componentsWithInlineFn!.add(currentComponent!)
         } else if (ts.isIdentifier(expr)) {
-          perComponentRefs!.get(currentComponent)!.push(expr.text)
+          perComponentRefs!.get(currentComponent!)!.push(expr.text)
         }
       }
     }
@@ -691,6 +717,7 @@ function collectSourceElements(
 
     if (entered) {
       currentComponent = savedComponent
+      currentComponentTracked = savedTracked
     }
   }
   ts.forEachChild(sourceFile, visit)
@@ -716,34 +743,42 @@ function collectSourceElements(
 function createJsxTagReference(
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement | ts.JsxClosingElement,
   sourceFile: ts.SourceFile,
+  nodeKind: ts.SyntaxKind,
 ): JsxTagReference | undefined {
   const tagNameExpression = node.tagName
+  const tagKind = tagNameExpression.kind
 
-  if (ts.isIdentifier(tagNameExpression)) {
-    if (!isComponentIdentifier(tagNameExpression.text)) {
+  if (tagKind === SK_Identifier) {
+    const text = (tagNameExpression as ts.Identifier).text
+    if (!isComponentIdentifier(text)) {
       return undefined
     }
 
     return {
-      lookupName: tagNameExpression.text,
-      ranges: getTagRanges(node, tagNameExpression, sourceFile),
-      tagName: tagNameExpression.text,
+      lookupName: text,
+      ranges: getTagRanges(node, tagNameExpression, sourceFile, nodeKind),
+      tagName: text,
     }
   }
 
-  if (!ts.isPropertyAccessExpression(tagNameExpression)) {
+  if (tagKind !== SK_PropertyAccess) {
     return undefined
   }
 
-  const rootIdentifier = getRootIdentifier(tagNameExpression.expression)
+  const rootIdentifier = getRootIdentifier(
+    (tagNameExpression as ts.PropertyAccessExpression).expression,
+  )
   if (!rootIdentifier || !isComponentIdentifier(rootIdentifier.text)) {
     return undefined
   }
 
   return {
     lookupName: rootIdentifier.text,
-    ranges: getTagRanges(node, tagNameExpression, sourceFile),
-    tagName: tagNameExpression.getText(sourceFile),
+    ranges: getTagRanges(node, tagNameExpression, sourceFile, nodeKind),
+    tagName: sourceFile.text.substring(
+      tagNameExpression.getStart(sourceFile),
+      tagNameExpression.end,
+    ),
   }
 }
 
@@ -751,19 +786,20 @@ function getTagRanges(
   node: ts.JsxOpeningElement | ts.JsxSelfClosingElement | ts.JsxClosingElement,
   tagNameExpression: ts.JsxTagNameExpression,
   sourceFile: ts.SourceFile,
+  nodeKind: ts.SyntaxKind,
 ): DecorationSegment[] {
-  if (ts.isJsxClosingElement(node)) {
+  if (nodeKind === SK_JsxClosing) {
     return [
       {
-        end: node.getEnd(),
+        end: node.end,
         start: node.getStart(sourceFile),
       },
     ]
   }
 
-  const tagNameEnd = tagNameExpression.getEnd()
-  const nodeEnd = node.getEnd()
-  const delimiterLength = ts.isJsxSelfClosingElement(node) ? 2 : 1
+  const tagNameEnd = tagNameExpression.end
+  const nodeEnd = node.end
+  const delimiterLength = nodeKind === SK_JsxSelfClosing ? 2 : 1
   const delimiterStart = nodeEnd - delimiterLength
 
   const ranges: DecorationSegment[] = [
@@ -787,10 +823,10 @@ function getRootIdentifier(
   expression: ts.Expression,
 ): ts.Identifier | undefined {
   let current = expression
-  while (ts.isPropertyAccessExpression(current)) {
-    current = current.expression
+  while (current.kind === SK_PropertyAccess) {
+    current = (current as ts.PropertyAccessExpression).expression
   }
-  return ts.isIdentifier(current) ? current : undefined
+  return current.kind === SK_Identifier ? (current as ts.Identifier) : undefined
 }
 
 function getScriptKind(filePath: string): ts.ScriptKind {
@@ -844,15 +880,14 @@ function hasUseClientDirective(sourceText: string): boolean {
       }
     }
 
-    if (ch === 34 && sourceText.startsWith('"use client"', i)) {
-      return true
-    }
-
-    if (ch === 39 && sourceText.startsWith("'use client'", i)) {
-      return true
-    }
-
     if (ch === 34 || ch === 39) {
+      if (
+        i + 11 < len &&
+        sourceText.charCodeAt(i + 11) === ch &&
+        sourceText.startsWith('use client', i + 1)
+      ) {
+        return true
+      }
       i++
       while (i < len && sourceText.charCodeAt(i) !== ch) i++
       if (i < len) i++

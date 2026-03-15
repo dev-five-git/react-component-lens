@@ -28,19 +28,22 @@ export class LensDecorations implements vscode.Disposable {
   public apply(editor: vscode.TextEditor, usages: ComponentUsage[]): void {
     const clientDecorations: vscode.DecorationOptions[] = []
     const serverDecorations: vscode.DecorationOptions[] = []
-    const editorDir = path.dirname(editor.document.uri.fsPath)
-    const hoverCache = new Map<string, vscode.MarkdownString>()
+    const document = editor.document
+    const editorDir = path.dirname(document.uri.fsPath)
+    const clientHoverCache = new Map<string, vscode.MarkdownString>()
+    const serverHoverCache = new Map<string, vscode.MarkdownString>()
 
     for (const usage of usages) {
-      const cacheKey = `${usage.kind}:${usage.sourceFilePath}`
-      let hoverMessage = hoverCache.get(cacheKey)
+      const isClient = usage.kind === 'client'
+      const hoverMap = isClient ? clientHoverCache : serverHoverCache
+      let hoverMessage = hoverMap.get(usage.sourceFilePath)
       if (!hoverMessage) {
         const displayPath = toDisplayPath(editorDir, usage.sourceFilePath)
-        const label = usage.kind === 'client' ? 'Client' : 'Server'
+        const label = isClient ? 'Client' : 'Server'
         hoverMessage = new vscode.MarkdownString(
           `${label} component from \`${displayPath}\``,
         )
-        hoverCache.set(cacheKey, hoverMessage)
+        hoverMap.set(usage.sourceFilePath, hoverMessage)
       }
 
       const target =
@@ -50,8 +53,8 @@ export class LensDecorations implements vscode.Disposable {
         target.push({
           hoverMessage,
           range: new vscode.Range(
-            editor.document.positionAt(range.start),
-            editor.document.positionAt(range.end),
+            document.positionAt(range.start),
+            document.positionAt(range.end),
           ),
         })
       }

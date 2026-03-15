@@ -7,7 +7,8 @@ import { ComponentLensAnalyzer, type ScopeConfig } from './analyzer'
 import { type HighlightColors, LensDecorations } from './decorations'
 import { ImportResolver, type SourceHost } from './resolver'
 
-const SUPPORTED_LANGUAGE_IDS = new Set(['javascriptreact', 'typescriptreact'])
+const LANG_JSX = 'javascriptreact'
+const LANG_TSX = 'typescriptreact'
 const SOURCE_WATCH_PATTERN = '**/*.{js,jsx,ts,tsx}'
 const CONFIG_WATCH_PATTERN = '**/{tsconfig,jsconfig}.json'
 const DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
@@ -51,15 +52,16 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   const refreshEditor = async (editor: vscode.TextEditor): Promise<void> => {
-    if (!config.enabled || !isSupportedDocument(editor.document)) {
+    const document = editor.document
+    if (!config.enabled || !isSupportedDocument(document)) {
       decorations.clear(editor)
       return
     }
 
-    const signature = createOpenSignature(editor.document.version)
+    const signature = createOpenSignature(document.version)
     const usages = await analyzer.analyzeDocument(
-      editor.document.fileName,
-      editor.document.getText(),
+      document.fileName,
+      document.getText(),
       signature,
       config.scope,
     )
@@ -207,7 +209,7 @@ function getConfiguration(): {
 function isSupportedDocument(document: vscode.TextDocument): boolean {
   return (
     document.uri.scheme === 'file' &&
-    SUPPORTED_LANGUAGE_IDS.has(document.languageId)
+    (document.languageId === LANG_TSX || document.languageId === LANG_JSX)
   )
 }
 
@@ -299,11 +301,11 @@ class WorkspaceSourceHost implements SourceHost {
 }
 
 function createOpenSignature(version: number): string {
-  return `open:${String(version)}`
+  return 'open:' + version
 }
 
 function createDiskSignature(mtimeMs: number, size: number): string {
-  return `disk:${String(mtimeMs)}:${String(size)}`
+  return 'disk:' + mtimeMs + ':' + size
 }
 
 function normalizeColor(
@@ -311,5 +313,5 @@ function normalizeColor(
   fallbackColor: string,
 ): string {
   const trimmedColor = color?.trim()
-  return trimmedColor && trimmedColor.length > 0 ? trimmedColor : fallbackColor
+  return trimmedColor || fallbackColor
 }
