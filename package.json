@@ -2,7 +2,7 @@
   "name": "react-component-lens",
   "displayName": "React Component Lens",
   "description": "Highlight React Server and Client component usage directly in the editor.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "devfive",
   "license": "MIT",
   "repository": {
