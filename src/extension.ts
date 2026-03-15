@@ -3,7 +3,7 @@ import * as path from 'node:path'
 
 import * as vscode from 'vscode'
 
-import { ComponentLensAnalyzer } from './analyzer'
+import { ComponentLensAnalyzer, type ScopeConfig } from './analyzer'
 import { type HighlightColors, LensDecorations } from './decorations'
 import { ImportResolver, type SourceHost } from './resolver'
 
@@ -61,6 +61,7 @@ export function activate(context: vscode.ExtensionContext): void {
       editor.document.fileName,
       editor.document.getText(),
       signature,
+      config.scope,
     )
     decorations.apply(editor, usages)
   }
@@ -171,6 +172,7 @@ function getConfiguration(): {
   debounceMs: number
   enabled: boolean
   highlightColors: HighlightColors
+  scope: ScopeConfig
 } {
   const configuration = vscode.workspace.getConfiguration('reactComponentLens')
   const debounceMs = configuration.get<number>('debounceMs', 200)
@@ -191,6 +193,13 @@ function getConfiguration(): {
         configuredHighlightColors?.serverComponent,
         DEFAULT_HIGHLIGHT_COLORS.serverComponent,
       ),
+    },
+    scope: {
+      declaration: configuration.get<boolean>('scope.declaration', true),
+      element: configuration.get<boolean>('scope.element', true),
+      export: configuration.get<boolean>('scope.export', true),
+      import: configuration.get<boolean>('scope.import', true),
+      type: configuration.get<boolean>('scope.type', true),
     },
   }
 }
