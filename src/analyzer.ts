@@ -304,6 +304,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     getScriptKind(filePath),
   )
 
+  const asyncComponents = new Set<string>()
   const componentRanges: { end: number; name: string; start: number }[] = []
   const exportReferences: NamedRange[] = []
   const importReferences: NamedRange[] = []
@@ -326,10 +327,9 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     name: string,
     nameNode: ts.Node,
     scopeNode: ts.Node,
-    kind: Exclude<ComponentKind, 'unknown'>,
   ): void => {
     localComponentDeclarations.push({ name, range: nodeRange(nameNode) })
-    localComponentKinds.set(name, kind)
+    localComponentKinds.set(name, ownComponentKind)
     componentRanges.push({
       end: scopeNode.getEnd(),
       name,
@@ -337,18 +337,10 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     })
   }
 
-  const inferKind = (
-    isAsync: boolean,
-    node: ts.Node,
-  ): Exclude<ComponentKind, 'unknown'> => {
-    if (ownComponentKind === 'client') {
-      return 'client'
-    }
-    if (isAsync) {
-      return 'server'
-    }
-    return hasNonServerFunctionProps(node) ? 'client' : 'server'
-  }
+  const hasAsyncModifier = (
+    modifiers: ts.NodeArray<ts.ModifierLike> | undefined,
+  ): boolean =>
+    modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ?? false
 
   for (; statementIndex < sourceFile.statements.length; statementIndex++) {
     const statement = sourceFile.statements[statementIndex]!
@@ -407,16 +399,10 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
       statement.name &&
       isComponentIdentifier(statement.name.text)
     ) {
-      const isAsync =
-        statement.modifiers?.some(
-          (m) => m.kind === ts.SyntaxKind.AsyncKeyword,
-        ) ?? false
-      registerComponent(
-        statement.name.text,
-        statement.name,
-        statement,
-        inferKind(isAsync, statement),
-      )
+      registerComponent(statement.name.text, statement.name, statement)
+      if (hasAsyncModifier(statement.modifiers)) {
+        asyncComponents.add(statement.name.text)
+      }
       continue
     }
 
@@ -425,12 +411,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
       statement.name &&
       isComponentIdentifier(statement.name.text)
     ) {
-      registerComponent(
-        statement.name.text,
-        statement.name,
-        statement,
-        inferKind(false, statement),
-      )
+      registerComponent(statement.name.text, statement.name, statement)
       continue
     }
 
@@ -477,20 +458,32 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     if (ts.isVariableStatement(statement)) {
       for (const declaration of statement.declarationList.declarations) {
         if (
-          ts.isIdentifier(declaration.name) &&
-          isComponentIdentifier(declaration.name.text) &&
-          isComponentInitializer(declaration.initializer)
+          !ts.isIdentifier(declaration.name) ||
+          !isComponentIdentifier(declaration.name.text) ||
+          !declaration.initializer
         ) {
-          const fn = getComponentFunction(declaration.initializer)
-          const isAsync =
-            fn?.modifiers?.some((m) => m.kind === ts.SyntaxKind.AsyncKeyword) ??
-            false
+          continue
+        }
+
+        if (ts.isClassExpression(declaration.initializer)) {
           registerComponent(
             declaration.name.text,
             declaration.name,
             declaration,
-            inferKind(isAsync, declaration),
           )
+          continue
+        }
+
+        const fn = getComponentFunction(declaration.initializer)
+        if (fn) {
+          registerComponent(
+            declaration.name.text,
+            declaration.name,
+            declaration,
+          )
+          if (hasAsyncModifier(fn.modifiers)) {
+            asyncComponents.add(declaration.name.text)
+          }
         }
       }
     }
@@ -500,6 +493,9 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     sourceFile,
     componentRanges,
     typeIdentifiers,
+    localComponentKinds,
+    asyncComponents,
+    ownComponentKind === 'server',
   )
 
   return {
@@ -527,12 +523,8 @@ function isComponentIdentifier(name: string): boolean {
 }
 
 function getComponentFunction(
-  initializer: ts.Expression | undefined,
+  initializer: ts.Expression,
 ): ts.ArrowFunction | ts.FunctionExpression | undefined {
-  if (!initializer) {
-    return undefined
-  }
-
   if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
     return initializer
   }
@@ -548,72 +540,6 @@ function getComponentFunction(
   }
 
   return undefined
-}
-
-function isComponentInitializer(
-  initializer: ts.Expression | undefined,
-): boolean {
-  if (!initializer) {
-    return false
-  }
-
-  return (
-    ts.isClassExpression(initializer) ||
-    getComponentFunction(initializer) !== undefined
-  )
-}
-
-function hasNonServerFunctionProps(node: ts.Node): boolean {
-  const localFunctions = new Map<string, boolean>()
-  const identifierRefs: string[] = []
-  let hasInlineFn = false
-
-  const visit = (n: ts.Node): void => {
-    if (hasInlineFn) {
-      return
-    }
-
-    if (ts.isFunctionDeclaration(n) && n.name) {
-      localFunctions.set(n.name.text, hasUseServerDirective(n))
-    } else if (
-      ts.isVariableDeclaration(n) &&
-      ts.isIdentifier(n.name) &&
-      n.initializer &&
-      (ts.isArrowFunction(n.initializer) ||
-        ts.isFunctionExpression(n.initializer))
-    ) {
-      localFunctions.set(n.name.text, hasUseServerDirective(n.initializer))
-    } else if (
-      ts.isJsxAttribute(n) &&
-      n.initializer &&
-      ts.isJsxExpression(n.initializer) &&
-      n.initializer.expression
-    ) {
-      const expr = n.initializer.expression
-
-      if (
-        (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) &&
-        !hasUseServerDirective(expr)
-      ) {
-        hasInlineFn = true
-        return
-      }
-
-      if (ts.isIdentifier(expr)) {
-        identifierRefs.push(expr.text)
-      }
-    }
-
-    ts.forEachChild(n, visit)
-  }
-  ts.forEachChild(node, visit)
-
-  return (
-    hasInlineFn ||
-    identifierRefs.some(
-      (ref) => localFunctions.has(ref) && !localFunctions.get(ref),
-    )
-  )
 }
 
 function hasUseServerDirective(
@@ -658,9 +584,43 @@ function collectSourceElements(
   sourceFile: ts.SourceFile,
   componentRanges: { end: number; name: string; start: number }[],
   typeIdentifiers: TypeIdentifier[],
+  localComponentKinds: Map<string, Exclude<ComponentKind, 'unknown'>>,
+  asyncComponents: Set<string>,
+  inferClientKind: boolean,
 ): JsxTagReference[] {
   const jsxTags: JsxTagReference[] = []
+
+  const componentByStart = new Map<number, { end: number; name: string }>()
+  for (const range of componentRanges) {
+    componentByStart.set(range.start, range)
+  }
+
+  const perComponentFuncs = new Map<string, Map<string, boolean>>()
+  const perComponentRefs = new Map<string, string[]>()
+  const componentsWithInlineFn = new Set<string>()
+
+  if (inferClientKind) {
+    for (const range of componentRanges) {
+      if (!asyncComponents.has(range.name)) {
+        perComponentFuncs.set(range.name, new Map())
+        perComponentRefs.set(range.name, [])
+      }
+    }
+  }
+
+  let currentComponent: string | undefined
+
   const visit = (node: ts.Node): void => {
+    const start = node.getStart(sourceFile)
+    const entry = componentByStart.get(start)
+    const entered = entry !== undefined && entry.end === node.getEnd()
+
+    let savedComponent: string | undefined
+    if (entered) {
+      savedComponent = currentComponent
+      currentComponent = entry.name
+    }
+
     if (
       ts.isJsxOpeningElement(node) ||
       ts.isJsxSelfClosingElement(node) ||
@@ -675,19 +635,73 @@ function collectSourceElements(
       ts.isIdentifier(node.typeName) &&
       isComponentIdentifier(node.typeName.text)
     ) {
-      const start = node.typeName.getStart(sourceFile)
-      const end = node.typeName.getEnd()
       typeIdentifiers.push({
-        enclosingComponent: componentRanges.find(
-          (r) => start >= r.start && end <= r.end,
-        )?.name,
+        enclosingComponent: currentComponent,
         name: node.typeName.text,
-        range: { end, start },
+        range: {
+          end: node.typeName.getEnd(),
+          start: node.typeName.getStart(sourceFile),
+        },
       })
     }
+
+    if (
+      currentComponent &&
+      perComponentFuncs.has(currentComponent) &&
+      !componentsWithInlineFn.has(currentComponent)
+    ) {
+      if (ts.isFunctionDeclaration(node) && node.name) {
+        perComponentFuncs
+          .get(currentComponent)!
+          .set(node.name.text, hasUseServerDirective(node))
+      } else if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.initializer &&
+        (ts.isArrowFunction(node.initializer) ||
+          ts.isFunctionExpression(node.initializer))
+      ) {
+        perComponentFuncs
+          .get(currentComponent)!
+          .set(node.name.text, hasUseServerDirective(node.initializer))
+      } else if (
+        ts.isJsxAttribute(node) &&
+        node.initializer &&
+        ts.isJsxExpression(node.initializer) &&
+        node.initializer.expression
+      ) {
+        const expr = node.initializer.expression
+
+        if (
+          (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr)) &&
+          !hasUseServerDirective(expr)
+        ) {
+          componentsWithInlineFn.add(currentComponent)
+        } else if (ts.isIdentifier(expr)) {
+          perComponentRefs.get(currentComponent)!.push(expr.text)
+        }
+      }
+    }
+
     ts.forEachChild(node, visit)
+
+    if (entered) {
+      currentComponent = savedComponent
+    }
   }
   ts.forEachChild(sourceFile, visit)
+
+  for (const [name, funcs] of perComponentFuncs) {
+    if (componentsWithInlineFn.has(name)) {
+      localComponentKinds.set(name, 'client')
+      continue
+    }
+    const refs = perComponentRefs.get(name)!
+    if (refs.some((ref) => funcs.has(ref) && !funcs.get(ref))) {
+      localComponentKinds.set(name, 'client')
+    }
+  }
+
   return jsxTags
 }
 
