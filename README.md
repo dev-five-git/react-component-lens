@@ -27,6 +27,11 @@ Components without `"use client"` are treated as Server Components.
 |---|---|---|
 | `reactComponentLens.enabled` | `true` | Enable or disable decorations |
 | `reactComponentLens.debounceMs` | `200` | Delay before recomputing after changes (0 – 2000 ms) |
+| `reactComponentLens.scope.element` | `true` | Highlight JSX element tags (`<Component />`, `</Component>`) |
+| `reactComponentLens.scope.declaration` | `true` | Highlight component declaration names (function, class, variable) |
+| `reactComponentLens.scope.export` | `true` | Highlight component names in export declarations |
+| `reactComponentLens.scope.import` | `true` | Highlight component names in import declarations |
+| `reactComponentLens.scope.type` | `true` | Highlight TypeScript interface and type alias declaration names |
 | `reactComponentLens.highlightColors.clientComponent` | `#14b8a6` | Text color for Client Component tags |
 | `reactComponentLens.highlightColors.serverComponent` | `#f59e0b` | Text color for Server Component tags |
 
