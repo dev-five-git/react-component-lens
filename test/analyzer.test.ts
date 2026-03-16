@@ -1309,6 +1309,220 @@ test('colors component declaration names based on file directive', async () => {
   }
 })
 
+test('does not highlight PascalCase variable imports that are not components', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import { Button, ThemeConfig, MaxRetries } from './utils';",
+      '',
+      'export default function Page() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+    'utils.tsx': [
+      "'use client';",
+      '',
+      'export const ThemeConfig = { dark: true, light: false };',
+      'export const MaxRetries = 3;',
+      'export function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const source = project.readFile('Page.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: false,
+      export: false,
+      import: true,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Page.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('Button')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('does not highlight PascalCase variable exports that are not components', async () => {
+  const project = createProject({
+    'index.tsx': [
+      "'use client';",
+      '',
+      'function Card() {',
+      '  return <div />;',
+      '}',
+      '',
+      'const ThemeConfig = { dark: true };',
+      '',
+      'export { Card, ThemeConfig };',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('index.tsx')
+    const source = project.readFile('index.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: false,
+      export: true,
+      import: false,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('index.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('Card')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('highlights components through barrel re-exports', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import { Button, ThemeConfig } from './components';",
+      '',
+      'export default function Page() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+    'components/index.ts': [
+      "export { Button } from './Button';",
+      "export { ThemeConfig } from './config';",
+    ].join('\n'),
+    'components/Button.tsx': [
+      "'use client';",
+      '',
+      'export function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+    'components/config.ts': ['export const ThemeConfig = { dark: true };'].join(
+      '\n',
+    ),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const source = project.readFile('Page.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: false,
+      export: false,
+      import: true,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Page.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('Button')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('does not highlight non-component JSX usage from imports', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import { ThemeConfig } from './config';",
+      '',
+      'export default function Page() {',
+      '  return <ThemeConfig />;',
+      '}',
+    ].join('\n'),
+    'config.ts': [
+      "'use client';",
+      '',
+      'export const ThemeConfig = { dark: true };',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const source = project.readFile('Page.tsx')
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Page.tsx'),
+    )
+
+    expect(usages.map((usage) => usage.tagName)).toEqual(['Page'])
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('highlights default import when source file exports a component', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import Button from './Button';",
+      '',
+      'export default function Page() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+    'Button.tsx': [
+      "'use client';",
+      '',
+      'export default function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Page.tsx')
+    const source = project.readFile('Page.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: false,
+      export: false,
+      import: true,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Page.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(1)
+    expect(usages[0]?.kind).toBe('client')
+    expect(usages[0]?.tagName).toBe('Button')
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
 function createAnalyzer(host: SourceHost): ComponentLensAnalyzer {
   const resolver = new ImportResolver(host)
   return new ComponentLensAnalyzer(host, resolver)
