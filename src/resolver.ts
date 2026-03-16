@@ -172,6 +172,14 @@ function findNearestConfigFile(startDirectory: string): string | undefined {
   }
 }
 
+export function createOpenSignature(version: number): string {
+  return 'open:' + version
+}
+
+export function createDiskSignature(mtimeMs: number, size: number): string {
+  return 'disk:' + mtimeMs + ':' + size
+}
+
 function isSupportedSourceFile(filePath: string): boolean {
   if (filePath.endsWith('.d.ts')) {
     return false

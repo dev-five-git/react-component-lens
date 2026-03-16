@@ -74,6 +74,21 @@
           "default": true,
           "description": "Highlight TypeScript interface and type alias declaration names."
         },
+        "reactComponentLens.codelens.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show CodeLens annotations indicating Server/Client Component kind."
+        },
+        "reactComponentLens.codelens.clientComponent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens for Client Components."
+        },
+        "reactComponentLens.codelens.serverComponent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens for Server Components."
+        },
         "reactComponentLens.highlightColors": {
           "type": "object",
           "default": {

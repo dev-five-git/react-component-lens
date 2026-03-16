@@ -4,8 +4,14 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 
 import { ComponentLensAnalyzer, type ScopeConfig } from './analyzer'
+import { type CodeLensConfig, ComponentCodeLensProvider } from './codelens'
 import { type HighlightColors, LensDecorations } from './decorations'
-import { ImportResolver, type SourceHost } from './resolver'
+import {
+  createDiskSignature,
+  createOpenSignature,
+  ImportResolver,
+  type SourceHost,
+} from './resolver'
 
 const LANG_JSX = 'javascriptreact'
 const LANG_TSX = 'typescriptreact'
@@ -22,8 +28,19 @@ export function activate(context: vscode.ExtensionContext): void {
   const resolver = new ImportResolver(sourceHost)
   const analyzer = new ComponentLensAnalyzer(sourceHost, resolver)
   const decorations = new LensDecorations(config.highlightColors)
+  const codeLensProvider = new ComponentCodeLensProvider(
+    analyzer,
+    config.codeLens,
+  )
 
-  context.subscriptions.push(decorations)
+  context.subscriptions.push(decorations, codeLensProvider)
+
+  context.subscriptions.push(
+    vscode.languages.registerCodeLensProvider(
+      [{ language: LANG_TSX }, { language: LANG_JSX }],
+      codeLensProvider,
+    ),
+  )
 
   let refreshTimer: NodeJS.Timeout | undefined
   let watcherDisposables: vscode.Disposable[] = []
@@ -47,6 +64,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     refreshTimer = setTimeout(() => {
       refreshTimer = undefined
+      codeLensProvider.refresh()
       void refreshVisibleEditors()
     }, delay)
   }
@@ -153,6 +171,10 @@ export function activate(context: vscode.ExtensionContext): void {
         decorations.updateColors(config.highlightColors)
       }
 
+      if (event.affectsConfiguration('reactComponentLens.codelens')) {
+        codeLensProvider.updateConfig(config.codeLens)
+      }
+
       scheduleRefresh(0)
     }),
     new vscode.Disposable(() => {
@@ -171,6 +193,7 @@ export function deactivate(): void {
 }
 
 function getConfiguration(): {
+  codeLens: CodeLensConfig
   debounceMs: number
   enabled: boolean
   highlightColors: HighlightColors
@@ -184,6 +207,18 @@ function getConfiguration(): {
   )
 
   return {
+    codeLens: {
+      clientComponent: configuration.get<boolean>(
+        'codelens.clientComponent',
+        true,
+      ),
+      enabled: configuration.get<boolean>('codelens.enabled', false),
+      globalEnabled: configuration.get<boolean>('enabled', true),
+      serverComponent: configuration.get<boolean>(
+        'codelens.serverComponent',
+        true,
+      ),
+    },
     debounceMs: Math.max(0, Math.min(2000, debounceMs)),
     enabled: configuration.get<boolean>('enabled', true),
     highlightColors: {
@@ -298,14 +333,6 @@ class WorkspaceSourceHost implements SourceHost {
     }
     return this.documentCache.get(this.lastNormalizedPath)
   }
-}
-
-function createOpenSignature(version: number): string {
-  return 'open:' + version
-}
-
-function createDiskSignature(mtimeMs: number, size: number): string {
-  return 'disk:' + mtimeMs + ':' + size
 }
 
 function normalizeColor(

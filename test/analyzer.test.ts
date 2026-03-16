@@ -5,7 +5,11 @@ import * as path from 'node:path'
 import { expect, test } from 'bun:test'
 
 import { ComponentLensAnalyzer, type ScopeConfig } from '../src/analyzer'
-import { ImportResolver, type SourceHost } from '../src/resolver'
+import {
+  createDiskSignature,
+  ImportResolver,
+  type SourceHost,
+} from '../src/resolver'
 
 test('detects client and server component usages from relative imports', async () => {
   const project = createProject({
@@ -1523,6 +1527,167 @@ test('highlights default import when source file exports a component', async () 
   }
 })
 
+test('codelens scope returns import and declaration usages together', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import Button from './Button';",
+      "import { Layout } from './Layout';",
+      '',
+      'export default function Page() {',
+      '  return (',
+      '    <>',
+      '      <Button />',
+      '      <Layout />',
+      '    </>',
+      '  );',
+      '}',
+    ].join('\n'),
+    'Button.tsx': [
+      "'use client';",
+      '',
+      'export default function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+    'Layout.tsx': [
+      'export function Layout() {',
+      '  return <section />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const pagePath = project.filePath('Page.tsx')
+    const pageSource = project.readFile('Page.tsx')
+    const codelensScope: ScopeConfig = {
+      declaration: true,
+      element: true,
+      export: true,
+      import: true,
+      type: true,
+    }
+    const usages = await analyzer.analyzeDocument(
+      pagePath,
+      pageSource,
+      project.signature('Page.tsx'),
+      codelensScope,
+    )
+
+    const mapped = usages.map((usage) => ({
+      kind: usage.kind,
+      tagName: usage.tagName,
+    }))
+
+    expect(mapped).toContainEqual({ kind: 'client', tagName: 'Button' })
+    expect(mapped).toContainEqual({ kind: 'server', tagName: 'Layout' })
+    expect(mapped).toContainEqual({ kind: 'server', tagName: 'Page' })
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('codelens scope correctly identifies client vs server from use-client directive', async () => {
+  const project = createProject({
+    'App.tsx': [
+      "import ClientComp from './ClientComp';",
+      "import ServerComp from './ServerComp';",
+      '',
+      'export default function App() {',
+      '  return (',
+      '    <>',
+      '      <ClientComp />',
+      '      <ServerComp />',
+      '    </>',
+      '  );',
+      '}',
+    ].join('\n'),
+    'ClientComp.tsx': [
+      "'use client';",
+      '',
+      'export default function ClientComp() {',
+      '  return <div />;',
+      '}',
+    ].join('\n'),
+    'ServerComp.tsx': [
+      'export default function ServerComp() {',
+      '  return <div />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const appPath = project.filePath('App.tsx')
+    const appSource = project.readFile('App.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: false,
+      export: false,
+      import: true,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      appPath,
+      appSource,
+      project.signature('App.tsx'),
+      scope,
+    )
+
+    expect(usages.length).toBe(2)
+    expect(usages.map((u) => ({ kind: u.kind, tagName: u.tagName }))).toEqual([
+      { kind: 'client', tagName: 'ClientComp' },
+      { kind: 'server', tagName: 'ServerComp' },
+    ])
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('codelens scope tracks source file paths for imports', async () => {
+  const project = createProject({
+    'Page.tsx': [
+      "import Button from './Button';",
+      '',
+      'export default function Page() {',
+      '  return <Button />;',
+      '}',
+    ].join('\n'),
+    'Button.tsx': [
+      "'use client';",
+      '',
+      'export default function Button() {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const pagePath = project.filePath('Page.tsx')
+    const pageSource = project.readFile('Page.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: true,
+      export: false,
+      import: true,
+      type: false,
+    }
+    const usages = await analyzer.analyzeDocument(
+      pagePath,
+      pageSource,
+      project.signature('Page.tsx'),
+      scope,
+    )
+
+    const buttonUsages = usages.filter((u) => u.tagName === 'Button')
+    expect(buttonUsages.length).toBeGreaterThan(0)
+    expect(buttonUsages[0]?.sourceFilePath).toBe(project.filePath('Button.tsx'))
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
 function createAnalyzer(host: SourceHost): ComponentLensAnalyzer {
   const resolver = new ImportResolver(host)
   return new ComponentLensAnalyzer(host, resolver)
@@ -1579,8 +1744,4 @@ function createProject(files: Record<string, string>): {
       return createDiskSignature(stats.mtimeMs, stats.size)
     },
   }
-}
-
-function createDiskSignature(mtimeMs: number, size: number): string {
-  return `disk:${String(mtimeMs)}:${String(size)}`
 }
