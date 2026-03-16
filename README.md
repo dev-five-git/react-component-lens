@@ -45,7 +45,7 @@ Colors can be any valid CSS color string. The VS Code Settings UI shows a color 
 
 ## Requirements
 
-- VS Code 1.110.0 or later
+- VS Code 1.14.0 or later
 - A project with `.tsx` or `.jsx` files
 
 No additional runtime, build step, or Next.js installation is required.
