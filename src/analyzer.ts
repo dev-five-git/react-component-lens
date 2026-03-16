@@ -96,6 +96,49 @@ export class ComponentLensAnalyzer {
     this.directiveCache.delete(filePath)
   }
 
+  public async findComponentDeclaration(
+    filePath: string,
+    componentName: string,
+  ): Promise<{ character: number; line: number } | undefined> {
+    const sourceText = this.host.readFileAsync
+      ? await this.host.readFileAsync(filePath)
+      : this.host.readFile(filePath)
+
+    if (sourceText === undefined) {
+      return undefined
+    }
+
+    const signature = this.host.getSignatureAsync
+      ? await this.host.getSignatureAsync(filePath)
+      : this.host.getSignature(filePath)
+
+    if (signature === undefined) {
+      return undefined
+    }
+
+    const analysis = this.getAnalysis(filePath, sourceText, signature)
+    if (!analysis) {
+      return undefined
+    }
+
+    const component = analysis.localComponents.get(componentName)
+    if (!component || component.ranges.length === 0) {
+      return undefined
+    }
+
+    const offset = component.ranges[0]!.start
+    let line = 0
+    let lastNewline = -1
+    for (let i = 0; i < offset; i++) {
+      if (sourceText.charCodeAt(i) === 10) {
+        line++
+        lastNewline = i
+      }
+    }
+
+    return { character: offset - lastNewline - 1, line }
+  }
+
   public async analyzeDocument(
     filePath: string,
     sourceText: string,
