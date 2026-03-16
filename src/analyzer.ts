@@ -30,8 +30,16 @@ interface CachedAnalysis {
 }
 
 interface CachedDirective {
+  componentNames: Set<string>
+  hasStarExport: boolean
   kind: Exclude<ComponentKind, 'unknown'>
+  reExports: Map<string, ReExportTarget>
   signature: string
+}
+
+interface ReExportTarget {
+  source: string
+  sourceName: string
 }
 
 interface NamedRange {
@@ -46,7 +54,10 @@ interface LocalComponent {
 
 interface FileAnalysis {
   exportReferences: NamedRange[]
-  imports: Map<string, { ranges: DecorationSegment[]; source: string }>
+  imports: Map<
+    string,
+    { exportName: string; ranges: DecorationSegment[]; source: string }
+  >
   jsxTags: JsxTagReference[]
   localComponents: Map<string, LocalComponent>
   ownComponentKind: Exclude<ComponentKind, 'unknown'>
@@ -104,11 +115,14 @@ export class ComponentLensAnalyzer {
 
     const usages: ComponentUsage[] = []
     let resolvedPaths: Map<string, string> | undefined
-    let componentKinds: Map<string, ComponentKind> | undefined
+    let fileInfos: Map<string, CachedDirective> | undefined
+    let reExportResolutions:
+      | Map<string, { sourceName: string; targetPath: string }>
+      | undefined
 
     if ((scope.element || scope.import) && analysis.imports.size > 0) {
       resolvedPaths = new Map()
-      componentKinds = new Map()
+      fileInfos = new Map()
       const uniqueFilePaths = new Set<string>()
 
       for (const [lookupName, entry] of analysis.imports) {
@@ -132,12 +146,111 @@ export class ComponentLensAnalyzer {
       if (uniqueFilePaths.size > 0) {
         await Promise.all(
           Array.from(uniqueFilePaths, (resolvedPath) =>
-            this.getFileComponentKind(resolvedPath).then((kind) => {
-              componentKinds!.set(resolvedPath, kind)
+            this.getFileComponentInfo(resolvedPath).then((info) => {
+              if (info) fileInfos!.set(resolvedPath, info)
             }),
           ),
         )
       }
+
+      const reExportTargets = new Set<string>()
+      reExportResolutions = new Map()
+
+      for (const [lookupName, entry] of analysis.imports) {
+        if (analysis.localComponents.has(lookupName)) continue
+        const resolvedFilePath = resolvedPaths.get(lookupName)
+        if (!resolvedFilePath) continue
+        const fileInfo = fileInfos.get(resolvedFilePath)
+        if (!fileInfo) continue
+
+        const exportName = entry.exportName
+        if (exportName === '*') continue
+        if (fileInfo.componentNames.has(exportName)) continue
+
+        const reExport = fileInfo.reExports.get(exportName)
+        if (reExport) {
+          const targetPath = this.resolver.resolveImport(
+            resolvedFilePath,
+            reExport.source,
+          )
+          if (targetPath) {
+            reExportResolutions.set(lookupName, {
+              sourceName: reExport.sourceName,
+              targetPath,
+            })
+            if (!fileInfos.has(targetPath)) {
+              reExportTargets.add(targetPath)
+            }
+          }
+        }
+      }
+
+      if (reExportTargets.size > 0) {
+        await Promise.all(
+          Array.from(reExportTargets, (targetPath) =>
+            this.getFileComponentInfo(targetPath).then((info) => {
+              if (info) fileInfos!.set(targetPath, info)
+            }),
+          ),
+        )
+      }
+    }
+
+    const checkImportedComponent = (
+      lookupName: string,
+    ):
+      | {
+          kind: Exclude<ComponentKind, 'unknown'>
+          sourceFilePath: string
+        }
+      | undefined => {
+      if (!resolvedPaths || !fileInfos) return undefined
+
+      const resolvedFilePath = resolvedPaths.get(lookupName)
+      if (!resolvedFilePath) return undefined
+
+      const fileInfo = fileInfos.get(resolvedFilePath)
+      if (!fileInfo) return undefined
+
+      const importEntry = analysis.imports.get(lookupName)
+      if (!importEntry) return undefined
+
+      const exportName = importEntry.exportName
+
+      if (exportName === '*') {
+        return { kind: fileInfo.kind, sourceFilePath: resolvedFilePath }
+      }
+
+      if (fileInfo.componentNames.has(exportName)) {
+        return { kind: fileInfo.kind, sourceFilePath: resolvedFilePath }
+      }
+
+      if (reExportResolutions) {
+        const reExportRes = reExportResolutions.get(lookupName)
+        if (reExportRes) {
+          const targetInfo = fileInfos.get(reExportRes.targetPath)
+          if (targetInfo) {
+            if (targetInfo.componentNames.has(reExportRes.sourceName)) {
+              return {
+                kind: targetInfo.kind,
+                sourceFilePath: reExportRes.targetPath,
+              }
+            }
+            if (targetInfo.hasStarExport) {
+              return {
+                kind: targetInfo.kind,
+                sourceFilePath: reExportRes.targetPath,
+              }
+            }
+          }
+        }
+      }
+
+      if (fileInfo.hasStarExport) {
+        return { kind: fileInfo.kind, sourceFilePath: resolvedFilePath }
+      }
+
+      return undefined
     }
 
     if (scope.element) {
@@ -155,47 +268,29 @@ export class ComponentLensAnalyzer {
           continue
         }
 
-        if (!resolvedPaths) {
-          continue
+        const result = checkImportedComponent(jsxTag.lookupName)
+        if (result) {
+          usages.push({
+            kind: result.kind,
+            ranges: jsxTag.ranges,
+            sourceFilePath: result.sourceFilePath,
+            tagName: jsxTag.tagName,
+          })
         }
-
-        const resolvedFilePath = resolvedPaths.get(jsxTag.lookupName)
-        if (!resolvedFilePath) {
-          continue
-        }
-
-        const componentKind = componentKinds!.get(resolvedFilePath)
-        if (!componentKind || componentKind === 'unknown') {
-          continue
-        }
-
-        usages.push({
-          kind: componentKind,
-          ranges: jsxTag.ranges,
-          sourceFilePath: resolvedFilePath,
-          tagName: jsxTag.tagName,
-        })
       }
     }
 
     if (scope.import && resolvedPaths) {
       for (const [name, entry] of analysis.imports) {
-        const resolvedFilePath = resolvedPaths.get(name)
-        if (!resolvedFilePath) {
-          continue
+        const result = checkImportedComponent(name)
+        if (result) {
+          usages.push({
+            kind: result.kind,
+            ranges: entry.ranges,
+            sourceFilePath: result.sourceFilePath,
+            tagName: name,
+          })
         }
-
-        const componentKind = componentKinds!.get(resolvedFilePath)
-        if (!componentKind || componentKind === 'unknown') {
-          continue
-        }
-
-        usages.push({
-          kind: componentKind,
-          ranges: entry.ranges,
-          sourceFilePath: resolvedFilePath,
-          tagName: name,
-        })
       }
     }
 
@@ -253,30 +348,34 @@ export class ComponentLensAnalyzer {
       const exportRefs = analysis.exportReferences
       for (let i = 0; i < exportRefs.length; i++) {
         const exportRef = exportRefs[i]!
-        usages.push({
-          kind: analysis.ownComponentKind,
-          ranges: exportRef.ranges,
-          sourceFilePath: filePath,
-          tagName: exportRef.name,
-        })
+        if (analysis.localComponents.has(exportRef.name)) {
+          usages.push({
+            kind: analysis.ownComponentKind,
+            ranges: exportRef.ranges,
+            sourceFilePath: filePath,
+            tagName: exportRef.name,
+          })
+        }
       }
     }
 
     return usages
   }
 
-  private async getFileComponentKind(filePath: string): Promise<ComponentKind> {
+  private async getFileComponentInfo(
+    filePath: string,
+  ): Promise<CachedDirective | undefined> {
     const signature = this.host.getSignatureAsync
       ? await this.host.getSignatureAsync(filePath)
       : this.host.getSignature(filePath)
 
     if (signature === undefined) {
-      return 'unknown'
+      return undefined
     }
 
     const cached = this.directiveCache.get(filePath)
     if (cached && cached.signature === signature) {
-      return cached.kind
+      return cached
     }
 
     const sourceText = this.host.readFileAsync
@@ -284,7 +383,7 @@ export class ComponentLensAnalyzer {
       : this.host.readFile(filePath)
 
     if (sourceText === undefined) {
-      return 'unknown'
+      return undefined
     }
 
     const kind: Exclude<ComponentKind, 'unknown'> = hasUseClientDirective(
@@ -292,8 +391,19 @@ export class ComponentLensAnalyzer {
     )
       ? 'client'
       : 'server'
-    this.directiveCache.set(filePath, { kind, signature })
-    return kind
+
+    const { componentNames, hasStarExport, reExports } =
+      extractFileComponentExports(filePath, sourceText)
+
+    const info: CachedDirective = {
+      componentNames,
+      hasStarExport,
+      kind,
+      reExports,
+      signature,
+    }
+    this.directiveCache.set(filePath, info)
+    return info
   }
 
   private getAnalysis(
@@ -326,7 +436,7 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
   const exportReferences: NamedRange[] = []
   const imports = new Map<
     string,
-    { ranges: DecorationSegment[]; source: string }
+    { exportName: string; ranges: DecorationSegment[]; source: string }
   >()
   const localComponents = new Map<string, LocalComponent>()
   const typeIdentifiers: TypeIdentifier[] = []
@@ -364,9 +474,14 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
     return false
   }
 
-  const addImport = (identifier: ts.Identifier, source: string): void => {
+  const addImport = (
+    identifier: ts.Identifier,
+    source: string,
+    exportName: string,
+  ): void => {
     if (isComponentIdentifier(identifier.text)) {
       imports.set(identifier.text, {
+        exportName,
         ranges: [nodeRange(identifier)],
         source,
       })
@@ -396,16 +511,25 @@ function parseFileAnalysis(filePath: string, sourceText: string): FileAnalysis {
           const importClause = importStmt.importClause
           if (importClause) {
             if (importClause.name) {
-              addImport(importClause.name, source)
+              addImport(importClause.name, source, 'default')
             }
             const namedBindings = importClause.namedBindings
             if (namedBindings) {
               if (namedBindings.kind === SK_NamespaceImport) {
-                addImport((namedBindings as ts.NamespaceImport).name, source)
+                addImport(
+                  (namedBindings as ts.NamespaceImport).name,
+                  source,
+                  '*',
+                )
               } else {
                 const elements = (namedBindings as ts.NamedImports).elements
                 for (let j = 0; j < elements.length; j++) {
-                  addImport(elements[j]!.name, source)
+                  const el = elements[j]!
+                  addImport(
+                    el.name,
+                    source,
+                    el.propertyName?.text ?? el.name.text,
+                  )
                 }
               }
             }
@@ -557,6 +681,8 @@ const SK_ExportAssignment = ts.SyntaxKind.ExportAssignment
 const SK_VariableStmt = ts.SyntaxKind.VariableStatement
 const SK_NamespaceImport = ts.SyntaxKind.NamespaceImport
 const SK_NamedExports = ts.SyntaxKind.NamedExports
+const SK_ExportKw = ts.SyntaxKind.ExportKeyword
+const SK_DefaultKw = ts.SyntaxKind.DefaultKeyword
 
 function isComponentIdentifier(name: string): boolean {
   const code = name.charCodeAt(0)
@@ -887,6 +1013,166 @@ function getRootIdentifier(
     current = (current as ts.PropertyAccessExpression).expression
   }
   return current.kind === SK_Identifier ? (current as ts.Identifier) : undefined
+}
+
+function extractFileComponentExports(
+  filePath: string,
+  sourceText: string,
+): {
+  componentNames: Set<string>
+  hasStarExport: boolean
+  reExports: Map<string, ReExportTarget>
+} {
+  const sourceFile = ts.createSourceFile(
+    filePath,
+    sourceText,
+    ts.ScriptTarget.Latest,
+    false,
+    getScriptKind(filePath),
+  )
+
+  const componentNames = new Set<string>()
+  const reExports = new Map<string, ReExportTarget>()
+  let hasStarExport = false
+  const localComponentNames = new Set<string>()
+  const statements = sourceFile.statements
+
+  for (let i = 0; i < statements.length; i++) {
+    const statement = statements[i]!
+    const stmtKind = statement.kind
+    if (stmtKind === SK_FunctionDecl) {
+      const funcDecl = statement as ts.FunctionDeclaration
+      if (funcDecl.name && isComponentIdentifier(funcDecl.name.text)) {
+        localComponentNames.add(funcDecl.name.text)
+      }
+    } else if (stmtKind === SK_ClassDecl) {
+      const classDecl = statement as ts.ClassDeclaration
+      if (classDecl.name && isComponentIdentifier(classDecl.name.text)) {
+        localComponentNames.add(classDecl.name.text)
+      }
+    } else if (stmtKind === SK_VariableStmt) {
+      const varStmt = statement as ts.VariableStatement
+      const declarations = varStmt.declarationList.declarations
+      for (let j = 0; j < declarations.length; j++) {
+        const decl = declarations[j]!
+        if (
+          decl.name.kind === SK_Identifier &&
+          isComponentIdentifier((decl.name as ts.Identifier).text) &&
+          decl.initializer &&
+          getComponentFunction(decl.initializer)
+        ) {
+          localComponentNames.add((decl.name as ts.Identifier).text)
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < statements.length; i++) {
+    const statement = statements[i]!
+    const stmtKind = statement.kind
+
+    if (
+      stmtKind === SK_FunctionDecl ||
+      stmtKind === SK_ClassDecl ||
+      stmtKind === SK_VariableStmt
+    ) {
+      const modifiers = (
+        statement as
+          | ts.ClassDeclaration
+          | ts.FunctionDeclaration
+          | ts.VariableStatement
+      ).modifiers
+      if (!modifiers) continue
+
+      let hasExport = false
+      let hasDefault = false
+      for (let m = 0; m < modifiers.length; m++) {
+        const modKind = modifiers[m]!.kind
+        if (modKind === SK_ExportKw) hasExport = true
+        if (modKind === SK_DefaultKw) hasDefault = true
+      }
+      if (!hasExport) continue
+
+      if (stmtKind === SK_FunctionDecl) {
+        const funcDecl = statement as ts.FunctionDeclaration
+        if (funcDecl.name && localComponentNames.has(funcDecl.name.text)) {
+          componentNames.add(funcDecl.name.text)
+          if (hasDefault) componentNames.add('default')
+        } else if (hasDefault && !funcDecl.name) {
+          componentNames.add('default')
+        }
+      } else if (stmtKind === SK_ClassDecl) {
+        const classDecl = statement as ts.ClassDeclaration
+        if (classDecl.name && localComponentNames.has(classDecl.name.text)) {
+          componentNames.add(classDecl.name.text)
+          if (hasDefault) componentNames.add('default')
+        } else if (hasDefault && !classDecl.name) {
+          componentNames.add('default')
+        }
+      } else {
+        const declarations = (statement as ts.VariableStatement).declarationList
+          .declarations
+        for (let j = 0; j < declarations.length; j++) {
+          const decl = declarations[j]!
+          if (
+            decl.name.kind === SK_Identifier &&
+            localComponentNames.has((decl.name as ts.Identifier).text)
+          ) {
+            componentNames.add((decl.name as ts.Identifier).text)
+          }
+        }
+      }
+    } else if (stmtKind === SK_ExportDecl) {
+      const exportDecl = statement as ts.ExportDeclaration
+      if (!exportDecl.exportClause) {
+        if (exportDecl.moduleSpecifier) {
+          hasStarExport = true
+        }
+      } else if (exportDecl.exportClause.kind === SK_NamedExports) {
+        const elements = (exportDecl.exportClause as ts.NamedExports).elements
+        const moduleSpec = exportDecl.moduleSpecifier
+        const source =
+          moduleSpec && moduleSpec.kind === SK_StringLiteral
+            ? (moduleSpec as ts.StringLiteral).text
+            : undefined
+        for (let j = 0; j < elements.length; j++) {
+          const element = elements[j]!
+          const exportedName = element.name.text
+          const localName = element.propertyName?.text ?? exportedName
+          if (!isComponentIdentifier(exportedName)) continue
+
+          if (source) {
+            reExports.set(exportedName, { source, sourceName: localName })
+          } else if (localComponentNames.has(localName)) {
+            componentNames.add(exportedName)
+          }
+        }
+      }
+    } else if (stmtKind === SK_ExportAssignment) {
+      const exportAssign = statement as ts.ExportAssignment
+      if (!exportAssign.isExportEquals) {
+        const expr = exportAssign.expression
+        if (expr.kind === SK_Identifier) {
+          if (localComponentNames.has((expr as ts.Identifier).text)) {
+            componentNames.add('default')
+          }
+        } else if (
+          expr.kind === SK_ArrowFunction ||
+          expr.kind === SK_FunctionExpr
+        ) {
+          componentNames.add('default')
+        } else if (expr.kind === SK_CallExpression) {
+          if (isComponentWrapper((expr as ts.CallExpression).expression)) {
+            componentNames.add('default')
+          }
+        } else if (expr.kind === SK_ClassExpr) {
+          componentNames.add('default')
+        }
+      }
+    }
+  }
+
+  return { componentNames, hasStarExport, reExports }
 }
 
 function getScriptKind(filePath: string): ts.ScriptKind {
