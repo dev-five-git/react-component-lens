@@ -212,7 +212,7 @@ function getConfiguration(): {
         'codelens.clientComponent',
         true,
       ),
-      enabled: configuration.get<boolean>('codelens.enabled', false),
+      enabled: configuration.get<boolean>('codelens.enabled', true),
       globalEnabled: configuration.get<boolean>('enabled', true),
       serverComponent: configuration.get<boolean>(
         'codelens.serverComponent',

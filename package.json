@@ -76,7 +76,7 @@
         },
         "reactComponentLens.codelens.enabled": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Show CodeLens annotations indicating Server/Client Component kind."
         },
         "reactComponentLens.codelens.clientComponent": {
