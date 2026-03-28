@@ -726,6 +726,7 @@ const SK_NamespaceImport = ts.SyntaxKind.NamespaceImport
 const SK_NamedExports = ts.SyntaxKind.NamedExports
 const SK_ExportKw = ts.SyntaxKind.ExportKeyword
 const SK_DefaultKw = ts.SyntaxKind.DefaultKeyword
+const SK_TypeLiteral = ts.SyntaxKind.TypeLiteral
 
 function isComponentIdentifier(name: string): boolean {
   const code = name.charCodeAt(0)
@@ -829,6 +830,7 @@ function collectSourceElements(
 
   let currentComponent: string | undefined
   let currentComponentTracked = false
+  let typeLiteralDepth = 0
 
   const visit = (node: ts.Node): void => {
     const nodeKind = node.kind
@@ -840,6 +842,9 @@ function collectSourceElements(
     ) {
       return
     }
+
+    const isTypeLiteral = nodeKind === SK_TypeLiteral
+    if (isTypeLiteral) typeLiteralDepth++
 
     const entry = componentByPos.get(node.pos)
     const entered = entry !== undefined && entry.end === node.end
@@ -869,7 +874,7 @@ function collectSourceElements(
       if (jsxTag) {
         jsxTags.push(jsxTag)
       }
-    } else if (nodeKind === SK_TypeReference) {
+    } else if (nodeKind === SK_TypeReference && typeLiteralDepth === 0) {
       const typeName = (node as ts.TypeReferenceNode).typeName
       if (
         typeName.kind === SK_Identifier &&
@@ -936,6 +941,8 @@ function collectSourceElements(
     }
 
     ts.forEachChild(node, visit)
+
+    if (isTypeLiteral) typeLiteralDepth--
 
     if (entered) {
       currentComponent = savedComponent

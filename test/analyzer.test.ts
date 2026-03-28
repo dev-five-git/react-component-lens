@@ -7,6 +7,7 @@ import { expect, test } from 'bun:test'
 import { ComponentLensAnalyzer, type ScopeConfig } from '../src/analyzer'
 import {
   createDiskSignature,
+  createOpenSignature,
   ImportResolver,
   type SourceHost,
 } from '../src/resolver'
@@ -1686,6 +1687,197 @@ test('codelens scope tracks source file paths for imports', async () => {
   } finally {
     project[Symbol.dispose]()
   }
+})
+
+test('does not color type references inside inline object types', async () => {
+  const project = createProject({
+    'Button.tsx': [
+      "'use client';",
+      '',
+      'interface ButtonProps {',
+      '  label: string;',
+      '}',
+      '',
+      'function Button(props: { children: ReactNode }) {',
+      '  return <button />;',
+      '}',
+      '',
+      'function IconButton(props: ButtonProps) {',
+      '  return <button />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Button.tsx')
+    const source = project.readFile('Button.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: false,
+      export: false,
+      import: false,
+      type: true,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Button.tsx'),
+      scope,
+    )
+
+    expect(usages.map((u) => u.tagName)).toEqual(['ButtonProps', 'ButtonProps'])
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('colors named type reference but not inline object type members', async () => {
+  const project = createProject({
+    'Card.tsx': [
+      'interface CardProps {',
+      '  title: string;',
+      '}',
+      '',
+      'function Card({ title }: CardProps) {',
+      '  return <div>{title}</div>;',
+      '}',
+      '',
+      'function Badge(props: { icon: ReactElement, label: string }) {',
+      '  return <span />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Card.tsx')
+    const source = project.readFile('Card.tsx')
+    const scope: ScopeConfig = {
+      declaration: false,
+      element: false,
+      export: false,
+      import: false,
+      type: true,
+    }
+    const usages = await analyzer.analyzeDocument(
+      filePath,
+      source,
+      project.signature('Card.tsx'),
+      scope,
+    )
+
+    expect(usages.map((u) => u.tagName)).toEqual(['CardProps', 'CardProps'])
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('findComponentDeclaration returns position for existing component', async () => {
+  const project = createProject({
+    'Card.tsx': [
+      "'use client';",
+      '',
+      'export function Card() {',
+      '  return <div />;',
+      '}',
+    ].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Card.tsx')
+
+    const result = await analyzer.findComponentDeclaration(filePath, 'Card')
+    expect(result).toEqual({ line: 2, character: 16 })
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('findComponentDeclaration returns undefined for non-existent file', async () => {
+  const project = createProject({
+    'Card.tsx': ['export function Card() {', '  return <div />;', '}'].join(
+      '\n',
+    ),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const result = await analyzer.findComponentDeclaration(
+      project.filePath('Missing.tsx'),
+      'Card',
+    )
+    expect(result).toBeUndefined()
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('findComponentDeclaration returns undefined for unknown component name', async () => {
+  const project = createProject({
+    'Card.tsx': ['export function Card() {', '  return <div />;', '}'].join(
+      '\n',
+    ),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Card.tsx')
+
+    const result = await analyzer.findComponentDeclaration(
+      filePath,
+      'NonExistent',
+    )
+    expect(result).toBeUndefined()
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('findComponentDeclaration returns undefined when signature is unavailable', async () => {
+  const project = createProject({
+    'Card.tsx': ['export function Card() {', '  return <div />;', '}'].join(
+      '\n',
+    ),
+  })
+
+  try {
+    const host: SourceHost = {
+      fileExists: project.host.fileExists,
+      getSignature: () => undefined,
+      readFile: project.host.readFile,
+    }
+    const analyzer = createAnalyzer(host)
+    const result = await analyzer.findComponentDeclaration(
+      project.filePath('Card.tsx'),
+      'Card',
+    )
+    expect(result).toBeUndefined()
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('findComponentDeclaration locates component on first line', async () => {
+  const project = createProject({
+    'Hero.tsx': ['function Hero() {', '  return <div />;', '}'].join('\n'),
+  })
+
+  try {
+    const analyzer = createAnalyzer(project.host)
+    const filePath = project.filePath('Hero.tsx')
+
+    const result = await analyzer.findComponentDeclaration(filePath, 'Hero')
+    expect(result).toEqual({ line: 0, character: 9 })
+  } finally {
+    project[Symbol.dispose]()
+  }
+})
+
+test('createOpenSignature formats version string', () => {
+  expect(createOpenSignature(42)).toBe('open:42')
+  expect(createOpenSignature(0)).toBe('open:0')
 })
 
 function createAnalyzer(host: SourceHost): ComponentLensAnalyzer {
