@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Star",
+      "sourceFilePath": "barrel.tsx",
+      "ranges": [
+        {
+          "start": 9,
+          "end": 13
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Page",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 57,
+          "end": 61
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Star",
+      "sourceFilePath": "barrel.tsx",
+      "ranges": [
+        {
+          "start": 75,
+          "end": 80
+        },
+        {
+          "start": 81,
+          "end": 83
+        }
+      ]
+    }
+  ]
+}

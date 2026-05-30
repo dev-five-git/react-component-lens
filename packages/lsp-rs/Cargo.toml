@@ -1,0 +1,20 @@
+[package]
+name = "lsp-rs"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "rcl-lsp"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+tower-lsp = { version = "0.20", features = ["runtime-tokio"] }
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "rt-multi-thread", "sync"] }
+dashmap = "5"
+core-rs = { path = "../core-rs" }

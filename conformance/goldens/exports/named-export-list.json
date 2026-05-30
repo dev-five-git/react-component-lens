@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Alpha",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 9,
+          "end": 14
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Beta",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 45,
+          "end": 49
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Alpha",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 80,
+          "end": 85
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Beta",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 87,
+          "end": 91
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Wrapper",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 111,
+          "end": 118
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Alpha",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 138,
+          "end": 144
+        },
+        {
+          "start": 144,
+          "end": 145
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Beta",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 152,
+          "end": 157
+        },
+        {
+          "start": 158,
+          "end": 160
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Alpha",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 165,
+          "end": 173
+        }
+      ]
+    }
+  ]
+}

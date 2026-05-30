@@ -1,0 +1,21 @@
+{
+  "name": "@react-component-lens/conformance-harness",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Fixture corpus runner + golden generator (TS oracle conformance).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "generate": "bun run ./src/generate.ts",
+    "fuzz": "bun run ./src/fuzz.ts",
+    "typecheck": "tsc -p ./tsconfig.json",
+    "lint": "oxlint .",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@react-component-lens/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

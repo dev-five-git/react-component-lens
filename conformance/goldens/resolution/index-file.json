@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Card",
+      "sourceFilePath": "ui/index.tsx",
+      "ranges": [
+        {
+          "start": 9,
+          "end": 13
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Page",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 53,
+          "end": 57
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "Card",
+      "sourceFilePath": "ui/index.tsx",
+      "ranges": [
+        {
+          "start": 71,
+          "end": 76
+        },
+        {
+          "start": 77,
+          "end": 79
+        }
+      ]
+    }
+  ]
+}

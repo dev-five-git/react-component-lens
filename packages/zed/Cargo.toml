@@ -1,0 +1,24 @@
+[package]
+name = "zed-react-component-lens"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "MIT"
+repository = "https://github.com/dev-five-git/react-component-lens"
+
+# Zed loads extensions as WASM components (cdylib).
+# Reference: gleam-lang/zed-gleam Cargo.toml @ d1ddea8,
+#            zed-extensions/astro Cargo.toml @ 4367cff.
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pinned to the latest published version on crates.io.
+# In-tree zed-industries/zed @ e2e7a67 has 0.8.0 unpublished; use 0.7.0 until released.
+zed_extension_api = "0.7.0"
+
+# Pedantic clippy is disabled for this crate because the cdylib API is
+# constrained by the zed_extension_api WIT bindings (Option<String>, format!,
+# etc. are non-negotiable) and stricter lints fight the upstream pattern.
+[lints]

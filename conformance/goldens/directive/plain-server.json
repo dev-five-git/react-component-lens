@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "PlainServer",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 16,
+          "end": 27
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "PlainServer",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 41,
+          "end": 53
+        },
+        {
+          "start": 54,
+          "end": 56
+        }
+      ]
+    }
+  ]
+}

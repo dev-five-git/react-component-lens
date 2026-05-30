@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Greeting",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 16,
+          "end": 24
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Label",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 38,
+          "end": 44
+        },
+        {
+          "start": 44,
+          "end": 45
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Label",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 56,
+          "end": 64
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Label",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 77,
+          "end": 82
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Widget",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 16,
+          "end": 22
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Pressable",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 36,
+          "end": 46
+        },
+        {
+          "start": 73,
+          "end": 75
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Pressable",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 88,
+          "end": 97
+        }
+      ]
+    }
+  ]
+}

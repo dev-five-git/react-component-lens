@@ -1,11 +1,10 @@
+import {
+  type ComponentLensAnalyzer,
+  type ComponentUsage,
+  createOpenSignature,
+  type ScopeConfig,
+} from '@react-component-lens/core'
 import * as vscode from 'vscode'
-
-import type {
-  ComponentLensAnalyzer,
-  ComponentUsage,
-  ScopeConfig,
-} from './analyzer'
-import { createOpenSignature } from './resolver'
 
 export interface CodeLensConfig {
   clientComponent: boolean

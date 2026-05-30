@@ -1,0 +1,61 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "List",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 16,
+          "end": 20
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Item",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 49,
+          "end": 54
+        },
+        {
+          "start": 55,
+          "end": 57
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Item",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 64,
+          "end": 69
+        },
+        {
+          "start": 70,
+          "end": 72
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Item",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 97,
+          "end": 101
+        }
+      ]
+    }
+  ]
+}

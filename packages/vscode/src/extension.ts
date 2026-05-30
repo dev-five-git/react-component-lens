@@ -1,17 +1,18 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import * as vscode from 'vscode'
-
-import { ComponentLensAnalyzer, type ScopeConfig } from './analyzer'
-import { type CodeLensConfig, ComponentCodeLensProvider } from './codelens'
-import { type HighlightColors, LensDecorations } from './decorations'
 import {
+  ComponentLensAnalyzer,
   createDiskSignature,
   createOpenSignature,
   ImportResolver,
+  type ScopeConfig,
   type SourceHost,
-} from './resolver'
+} from '@react-component-lens/core'
+import * as vscode from 'vscode'
+
+import { type CodeLensConfig, ComponentCodeLensProvider } from './codelens'
+import { type HighlightColors, LensDecorations } from './decorations'
 
 const LANG_JSX = 'javascriptreact'
 const LANG_TSX = 'typescriptreact'

@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Memoized",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 43,
+          "end": 51
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Host",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 118,
+          "end": 122
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Memoized",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 136,
+          "end": 145
+        },
+        {
+          "start": 146,
+          "end": 148
+        }
+      ]
+    }
+  ]
+}

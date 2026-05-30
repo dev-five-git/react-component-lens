@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Page",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 57,
+          "end": 61
+        }
+      ]
+    }
+  ]
+}

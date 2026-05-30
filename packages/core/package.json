@@ -1,0 +1,20 @@
+{
+  "name": "@react-component-lens/core",
+  "version": "0.3.0",
+  "private": true,
+  "description": "Editor-agnostic React Server/Client component analyzer (conformance oracle).",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p ./tsconfig.json",
+    "lint": "oxlint .",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "typescript": "5.9.3"
+  }
+}

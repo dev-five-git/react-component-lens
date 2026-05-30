@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Dual",
+      "sourceFilePath": "Dual.ts",
+      "ranges": [
+        {
+          "start": 9,
+          "end": 13
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Page",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 55,
+          "end": 59
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Dual",
+      "sourceFilePath": "Dual.ts",
+      "ranges": [
+        {
+          "start": 73,
+          "end": 78
+        },
+        {
+          "start": 79,
+          "end": 81
+        }
+      ]
+    }
+  ]
+}

@@ -1,8 +1,7 @@
 import * as path from 'node:path'
 
+import type { ComponentUsage } from '@react-component-lens/core'
 import * as vscode from 'vscode'
-
-import type { ComponentUsage } from './analyzer'
 
 export interface HighlightColors {
   clientComponent: string

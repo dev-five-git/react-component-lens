@@ -1,0 +1,15 @@
+id = "react-component-lens"
+name = "React Component Lens"
+description = "Colors JSX component tags by RSC client/server boundary (matches the VS Code extension)."
+version = "0.1.0"
+schema_version = 1
+authors = ["dev-five-git"]
+repository = "https://github.com/dev-five-git/react-component-lens"
+
+# Attach our LSP to the built-in TSX language. We do NOT redefine `tsx`;
+# Zed stacks our semantic tokens on top of vtsls automatically (one
+# SemanticTokenStylizer per language server, see
+# crates/project/src/lsp_store/semantic_tokens.rs @ e2e7a67).
+[language_servers.rcl-lsp]
+name = "React Component Lens LSP"
+language = "TSX"

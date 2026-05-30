@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Greeter",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 52,
+          "end": 59
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Greeter",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 73,
+          "end": 81
+        },
+        {
+          "start": 82,
+          "end": 84
+        }
+      ]
+    }
+  ]
+}

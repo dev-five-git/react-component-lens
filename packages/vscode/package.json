@@ -128,10 +128,11 @@
     "vscode:prepublish": "bun run build:production"
   },
   "dependencies": {
+    "@react-component-lens/core": "workspace:*",
     "typescript": "5.9.3"
   },
   "devDependencies": {
     "@types/vscode": "1.14.0",
-    "@vscode/vsce": "3.7.1"
+    "@vscode/vsce": "3.9.1"
   }
 }

@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Screen",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 16,
+          "end": 22
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Selectable",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 76,
+          "end": 87
+        },
+        {
+          "start": 112,
+          "end": 114
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Selectable",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 127,
+          "end": 137
+        }
+      ]
+    }
+  ]
+}
