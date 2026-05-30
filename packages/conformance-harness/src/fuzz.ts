@@ -202,10 +202,31 @@ async function shrink(source: string, rustEnabled: boolean): Promise<string> {
   return current.join('\n')
 }
 
+function parseNumberFlag(flag: string, fallback: number): number {
+  for (const arg of process.argv.slice(2)) {
+    if (arg.startsWith(`${flag}=`)) {
+      const value = Number(arg.slice(flag.length + 1))
+      if (Number.isFinite(value)) {
+        return value
+      }
+    }
+  }
+  return fallback
+}
+
 async function main(): Promise<void> {
-  const seedArg = Number(process.env.FUZZ_SEED ?? '1')
-  const iterations = Number(process.env.FUZZ_ITERATIONS ?? '500')
-  const rustEnabled = process.env.FUZZ_RUST === '1'
+  // CLI flags take precedence over env vars so the same script works on
+  // Windows PowerShell, cmd, bash, and CI without cross-env shims.
+  const seedArg = parseNumberFlag(
+    '--seed',
+    Number(process.env.FUZZ_SEED ?? '1'),
+  )
+  const iterations = parseNumberFlag(
+    '--iterations',
+    Number(process.env.FUZZ_ITERATIONS ?? '500'),
+  )
+  const rustEnabled =
+    process.argv.includes('--rust') || process.env.FUZZ_RUST === '1'
   const rng = mulberry32(seedArg)
 
   if (rustEnabled) {

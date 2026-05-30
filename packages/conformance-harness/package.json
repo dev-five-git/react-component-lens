@@ -8,6 +8,7 @@
   "scripts": {
     "generate": "bun run ./src/generate.ts",
     "fuzz": "bun run ./src/fuzz.ts",
+    "fuzz:ci": "bun run ./src/fuzz.ts --rust --iterations=1000 --seed=1",
     "typecheck": "tsc -p ./tsconfig.json",
     "lint": "oxlint .",
     "test": "bun test"

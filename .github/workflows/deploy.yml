@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  pull_request_target: 
+  pull_request_target:
     branches:
       - main
 
@@ -15,16 +15,39 @@ permissions:
 jobs:
 
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test-${{ matrix.os }}
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.9'
+
       - run: bun install --frozen-lockfile
+
+      # `bun run lint` = oxlint + cargo fmt --check + cargo clippy (native)
+      # + cargo clippy (wasm32-wasip1 zed crate).
       - run: bun run lint
+
       - run: bun run typecheck
+
+      # `bun run test` = cargo test (workspace, excluding zed wasm crate)
+      # + bun test (JS/TS) + cargo build wasm + cargo build emit-canonical
+      # + Rust-vs-TS differential fuzz (1000 seeds, zero-diff required).
       - run: bun run test
 
   changepacks:
@@ -76,13 +99,107 @@ jobs:
           upload_url: ${{ fromJson(needs.changepacks.outputs.release_assets_urls)['packages/vscode/package.json'] }}
           asset_path: packages/vscode/react-component-lens-*.vsix
 
+  lsp-binaries:
+    name: lsp-binaries (${{ matrix.target }})
+    needs: changepacks
+    if: ${{ contains(needs.changepacks.outputs.changepacks, 'packages/vscode/package.json') }}
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            asset_arch: x86_64
+            asset_os: unknown-linux-gnu
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            asset_arch: aarch64
+            asset_os: unknown-linux-gnu
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+            asset_arch: x86_64
+            asset_os: apple-darwin
+            cross: false
+          - target: aarch64-apple-darwin
+            os: macos-14
+            archive: tar.gz
+            asset_arch: aarch64
+            asset_os: apple-darwin
+            cross: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+            asset_arch: x86_64
+            asset_os: pc-windows-msvc
+            cross: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lsp-binaries-${{ matrix.target }}
+
+      - name: Install cross
+        if: ${{ matrix.cross }}
+        run: cargo install cross --locked --version '^0.2'
+
+      - name: Read VS Code package version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./packages/vscode/package.json').version")
+          stem="rcl-lsp-${version}-${{ matrix.asset_arch }}-${{ matrix.asset_os }}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "stem=${stem}" >> "$GITHUB_OUTPUT"
+          echo "archive=${stem}.${{ matrix.archive }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build rcl-lsp
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release --target ${{ matrix.target }} -p lsp-rs --bin rcl-lsp
+          else
+            cargo build --release --target ${{ matrix.target }} -p lsp-rs --bin rcl-lsp
+          fi
+
+      - name: Package archive
+        shell: bash
+        run: |
+          mkdir -p staging
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/rcl-lsp.exe" staging/
+            (cd staging && 7z a -tzip "../${{ steps.version.outputs.archive }}" rcl-lsp.exe)
+          else
+            cp "target/${{ matrix.target }}/release/rcl-lsp" staging/
+            (cd staging && tar -czf "../${{ steps.version.outputs.archive }}" rcl-lsp)
+          fi
+          ls -lh "${{ steps.version.outputs.archive }}"
+
+      - name: Upload to GitHub Release
+        uses: owjs3901/upload-github-release-asset@main
+        with:
+          upload_url: ${{ fromJson(needs.changepacks.outputs.release_assets_urls)['packages/vscode/package.json'] }}
+          asset_path: ${{ steps.version.outputs.archive }}
+
   publish:
     name: Publish
     runs-on: ubuntu-latest
     if: ${{ contains(needs.changepacks.outputs.changepacks, 'packages/vscode/package.json') }}
     needs:
       - changepacks
-      # rust-test job added in P6-T15
+      - lsp-binaries
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
