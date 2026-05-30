@@ -1,0 +1,137 @@
+{
+  "name": "react-component-lens",
+  "displayName": "React Component Lens",
+  "description": "Highlight React Server and Client component usage directly in the editor.",
+  "version": "0.3.0",
+  "publisher": "devfive",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dev-five-git/react-component-lens",
+    "directory": "packages/vscode"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "react",
+    "nextjs",
+    "server-components",
+    "client-components",
+    "typescript"
+  ],
+  "engines": {
+    "vscode": "^1.14.0"
+  },
+  "activationEvents": [
+    "onLanguage:typescriptreact",
+    "onLanguage:javascriptreact"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "reactComponentLens.refresh",
+        "title": "React Component Lens: Refresh Decorations"
+      }
+    ],
+    "configuration": {
+      "title": "React Component Lens",
+      "properties": {
+        "reactComponentLens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable React Component Lens decorations in React editors."
+        },
+        "reactComponentLens.debounceMs": {
+          "type": "number",
+          "default": 200,
+          "minimum": 0,
+          "maximum": 2000,
+          "description": "Debounce delay, in milliseconds, before recomputing decorations after workspace changes."
+        },
+        "reactComponentLens.scope.element": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight JSX element tags (<Component />, </Component>)."
+        },
+        "reactComponentLens.scope.declaration": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight component declaration names (function, class, variable)."
+        },
+        "reactComponentLens.scope.export": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight component names in export declarations (export { Component }, export default Component)."
+        },
+        "reactComponentLens.scope.import": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight component names in import declarations (import { Component } from ...)."
+        },
+        "reactComponentLens.scope.type": {
+          "type": "boolean",
+          "default": true,
+          "description": "Highlight TypeScript interface and type alias declaration names."
+        },
+        "reactComponentLens.codelens.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens annotations indicating Server/Client Component kind."
+        },
+        "reactComponentLens.codelens.clientComponent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens for Client Components."
+        },
+        "reactComponentLens.codelens.serverComponent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens for Server Components."
+        },
+        "reactComponentLens.highlightColors": {
+          "type": "object",
+          "default": {
+            "clientComponent": "#14b8a6",
+            "serverComponent": "#f59e0b"
+          },
+          "additionalProperties": false,
+          "description": "Text colors for React Component Lens decorations.",
+          "properties": {
+            "clientComponent": {
+              "type": "string",
+              "format": "color",
+              "default": "#14b8a6",
+              "description": "CSS text color used for Client Component usages."
+            },
+            "serverComponent": {
+              "type": "string",
+              "format": "color",
+              "default": "#f59e0b",
+              "description": "CSS text color used for Server Component usages."
+            }
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked",
+    "build:production": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --minify",
+    "watch": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked --watch",
+    "typecheck": "tsc -p ./tsconfig.json",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint . --fix",
+    "test": "bun test",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "bun run build:production"
+  },
+  "dependencies": {
+    "typescript": "5.9.3"
+  },
+  "devDependencies": {
+    "@types/vscode": "1.14.0",
+    "@vscode/vsce": "3.7.1"
+  }
+}

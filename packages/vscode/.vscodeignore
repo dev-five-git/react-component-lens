@@ -1,0 +1,9 @@
+.vscode/**
+.gitignore
+out/**/*.map
+src/**
+test/**
+tsconfig.json
+bunfig.toml
+coverage/**
+node_modules/**

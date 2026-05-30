@@ -1,54 +1,30 @@
-# React Component Lens
+# React Component Lens — Monorepo
 
-Visually distinguish Server Components and Client Components in React / Next.js projects directly in your editor.
+Visually distinguish React Server Components and Client Components directly in your editor.
 
-[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/devfive.react-component-lens)](https://marketplace.visualstudio.com/items?itemName=devfive.react-component-lens)
+This repository is a [bun workspace](https://bun.sh/docs/install/workspaces) monorepo that hosts the editor integrations for multiple platforms.
 
-![React Component Lens demo](medias/demo.png)
+## Packages
 
-## Why
-
-In Next.js App Router and React Server Components, the boundary between server and client execution is critical for performance and bundle size. But JSX like `<MyComponent />` gives no visual cue about where it runs.
-
-React Component Lens solves this by coloring component tags based on whether the imported file contains `"use client"`.
-
-## How It Works
-
-1. Parses the active `.tsx` / `.jsx` file for JSX tags
-2. Resolves each import to its source file (supports relative paths, `tsconfig` path aliases, and barrel re-exports)
-3. Detects `"use client"` at the top of the resolved file
-4. Colors the tag shell (`<Component`, `>`, `/>`, `</Component>`) — props are left untouched
-
-Components without `"use client"` are treated as Server Components.
-
-## Settings
-
-| Setting | Default | Description |
+| Package | Path | Description |
 |---|---|---|
-| `reactComponentLens.enabled` | `true` | Enable or disable decorations |
-| `reactComponentLens.debounceMs` | `200` | Delay before recomputing after changes (0 – 2000 ms) |
-| `reactComponentLens.scope.element` | `true` | Highlight JSX element tags (`<Component />`, `</Component>`) |
-| `reactComponentLens.scope.declaration` | `true` | Highlight component declaration names (function, class, variable) |
-| `reactComponentLens.scope.export` | `true` | Highlight component names in export declarations |
-| `reactComponentLens.scope.import` | `true` | Highlight component names in import declarations |
-| `reactComponentLens.scope.type` | `true` | Highlight TypeScript interface and type alias declaration names |
-| `reactComponentLens.highlightColors.clientComponent` | `#14b8a6` | Text color for Client Component tags |
-| `reactComponentLens.highlightColors.serverComponent` | `#f59e0b` | Text color for Server Component tags |
+| VS Code extension | [`packages/vscode`](packages/vscode) | The VS Code / Open VSX extension (`devfive.react-component-lens`). |
 
-Colors can be any valid CSS color string. The VS Code Settings UI shows a color picker for these fields.
+## Development
 
-## Commands
+```bash
+bun install            # install all workspace dependencies
+bun run build          # build every package
+bun run typecheck      # type-check every package
+bun run lint           # lint the whole workspace
+bun run test           # run the test suite
+```
 
-| Command | Description |
-|---|---|
-| `React Component Lens: Refresh Decorations` | Clear caches and reapply decorations |
+To work on a single package, use bun's filter flag:
 
-## Requirements
-
-- VS Code 1.14.0 or later
-- A project with `.tsx` or `.jsx` files
-
-No additional runtime, build step, or Next.js installation is required.
+```bash
+bun run --filter react-component-lens build
+```
 
 ## License
 
