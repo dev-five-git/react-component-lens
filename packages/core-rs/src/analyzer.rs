@@ -2399,7 +2399,9 @@ mod tests {
 
     #[test]
     fn lexical_normalize_collapses_current_directory_segments() {
-        assert_eq!(lexical_normalize(Path::new("a/./b")), PathBuf::from("a/b"));
+        // A leading `.` yields a `Component::CurDir` (interior `.` is already
+        // collapsed by `Path::components()`), exercising the CurDir arm.
+        assert_eq!(lexical_normalize(Path::new("./a")), PathBuf::from("a"));
     }
 
     #[test]
