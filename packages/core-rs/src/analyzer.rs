@@ -386,46 +386,71 @@ fn resolve_export_declaration(
     host: &impl SourceHost,
 ) -> Option<(Kind, PathBuf)> {
     let visit_key = (file_path.to_path_buf(), export_name.to_string());
-    if !visited.insert(visit_key) {
-        return None;
-    }
-
-    if !file_infos.contains_key(file_path) {
-        let info = get_file_component_info(file_path, host)?;
-        file_infos.insert(file_path.to_path_buf(), info);
-    }
-
-    let file_info = file_infos.get(file_path)?;
-    if export_name == "*" || file_info.component_names.contains(export_name) {
-        return Some((file_info.kind, file_path.to_path_buf()));
-    }
-
-    let re_export = file_info
-        .re_exports
-        .get(export_name)
-        .map(|target| (target.source.clone(), target.source_name.clone()));
-    let star_exports = file_info.star_exports.clone();
-
-    if let Some((source, source_name)) = re_export
-        && let Some(target_path) = resolve_import(file_path, &source)
-        && let Some(resolved) =
-            resolve_export_declaration(&target_path, &source_name, file_infos, visited, host)
-    {
-        return Some(resolved);
-    }
-
-    for source in star_exports {
-        let Some(target_path) = resolve_import(file_path, &source) else {
-            continue;
+    if visited.insert(visit_key) {
+        let has_file_info = if file_infos.contains_key(file_path) {
+            true
+        } else if let Some(info) = get_file_component_info(file_path, host) {
+            file_infos.insert(file_path.to_path_buf(), info);
+            true
+        } else {
+            false
         };
-        if let Some(resolved) =
-            resolve_export_declaration(&target_path, export_name, file_infos, visited, host)
-        {
-            return Some(resolved);
-        }
-    }
 
-    None
+        if has_file_info {
+            if let Some(file_info) = file_infos.get(file_path) {
+                if export_name == "*" || file_info.component_names.contains(export_name) {
+                    Some((file_info.kind, file_path.to_path_buf()))
+                } else {
+                    let re_export = file_info
+                        .re_exports
+                        .get(export_name)
+                        .map(|target| (target.source.clone(), target.source_name.clone()));
+                    let star_exports = file_info.star_exports.clone();
+
+                    let re_export_resolution = if let Some((source, source_name)) = re_export
+                        && let Some(target_path) = resolve_import(file_path, &source)
+                    {
+                        resolve_export_declaration(
+                            &target_path,
+                            &source_name,
+                            file_infos,
+                            visited,
+                            host,
+                        )
+                    } else {
+                        None
+                    };
+
+                    if re_export_resolution.is_some() {
+                        re_export_resolution
+                    } else {
+                        let mut resolved_export = None;
+                        for source in star_exports {
+                            if resolved_export.is_none()
+                                && let Some(target_path) = resolve_import(file_path, &source)
+                                && let Some(resolved) = resolve_export_declaration(
+                                    &target_path,
+                                    export_name,
+                                    file_infos,
+                                    visited,
+                                    host,
+                                )
+                            {
+                                resolved_export = Some(resolved);
+                            }
+                        }
+                        resolved_export
+                    }
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    }
 }
 
 fn parse_file_analysis(file_path: &Path, source_text: &str) -> FileAnalysis {
@@ -1174,32 +1199,29 @@ fn jsx_lookup_and_tag_name(
 ) -> Option<(String, String)> {
     match tag_name_expression {
         JSXElementName::Identifier(identifier) => {
-            let text = identifier.name.as_str();
-            if is_component_identifier(text) {
-                Some((text.to_string(), text.to_string()))
-            } else {
-                None
-            }
+            jsx_identifier_lookup_and_tag_name(identifier.name.as_str())
         }
         JSXElementName::IdentifierReference(identifier) => {
-            let text = identifier.name.as_str();
-            if is_component_identifier(text) {
-                Some((text.to_string(), text.to_string()))
-            } else {
-                None
-            }
+            jsx_identifier_lookup_and_tag_name(identifier.name.as_str())
         }
         JSXElementName::MemberExpression(member) => {
-            let root = jsx_member_root_identifier(&member.object)?;
-            if !is_component_identifier(root) {
-                return None;
+            match jsx_member_root_identifier(&member.object) {
+                Some(root) if is_component_identifier(root) => Some((
+                    root.to_string(),
+                    source_slice(source_text, tag_name_expression.span()).to_string(),
+                )),
+                _ => None,
             }
-            Some((
-                root.to_string(),
-                source_slice(source_text, tag_name_expression.span()).to_string(),
-            ))
         }
         JSXElementName::NamespacedName(_) | JSXElementName::ThisExpression(_) => None,
+    }
+}
+
+fn jsx_identifier_lookup_and_tag_name(text: &str) -> Option<(String, String)> {
+    if is_component_identifier(text) {
+        Some((text.to_string(), text.to_string()))
+    } else {
+        None
     }
 }
 
