@@ -22,8 +22,8 @@
       "sourceFilePath": "entry.tsx",
       "ranges": [
         {
-          "start": 76,
-          "end": 80
+          "start": 77,
+          "end": 81
         }
       ]
     },
@@ -33,12 +33,12 @@
       "sourceFilePath": "Widget.tsx",
       "ranges": [
         {
-          "start": 94,
-          "end": 108
+          "start": 95,
+          "end": 109
         },
         {
-          "start": 109,
-          "end": 111
+          "start": 110,
+          "end": 112
         }
       ]
     }
