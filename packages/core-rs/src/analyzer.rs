@@ -1899,7 +1899,7 @@ mod tests {
         let source = r"
             import * as UI from './ui';
             import * as lowercase from './ui';
-            function Page(){ return <><UI.Card/><UI.Nested.Card/><lowercase.Card/><this.Card/><svg:path /></>; }
+            function Page(){ return <><UI.Card/><UI.Nested.Card/><lowercase.Card/><foo.Bar/><this.Card/><svg:path /></>; }
         ";
         let project = TempProject::new();
         let entry = project.write("entry.tsx", source);
@@ -1919,8 +1919,17 @@ mod tests {
                 .iter()
                 .any(|usage| usage.tag_name == "lowercase.Card")
         );
+        assert!(!usages.iter().any(|usage| usage.tag_name == "foo.Bar"));
         assert!(!usages.iter().any(|usage| usage.tag_name == "this.Card"));
         assert!(!usages.iter().any(|usage| usage.tag_name == "svg:path"));
+    }
+
+    #[test]
+    fn intrinsic_jsx_identifier_names_are_ignored() {
+        let source = "function Page(){ return <div/>; }";
+        let usages = analyze_temp_source(Path::new("/virtual/intrinsic.tsx"), source);
+
+        assert!(!usages.iter().any(|usage| usage.tag_name == "div"));
     }
 
     #[test]
@@ -1984,6 +1993,44 @@ mod tests {
         assert!(!client_names.contains("Missing"));
         assert!(!client_names.contains("MissingStar"));
         assert!(!server_names.contains("LoopThing"));
+    }
+
+    #[test]
+    fn direct_reexport_resolution_covers_cache_misses_and_missing_star_sources() {
+        let project = TempProject::new();
+        let barrel = project.write(
+            "barrel.tsx",
+            "export { Button } from './button'; export * from './missing-star'; export * from './star';",
+        );
+        let button = project.write(
+            "button.tsx",
+            "'use client'; export function Button(){ return <Button/>; }",
+        );
+        let star = project.write(
+            "star.tsx",
+            "export function StarThing(){ return <StarThing/>; }",
+        );
+        let mut file_infos = HashMap::new();
+
+        let resolved_named = resolve_export_declaration(
+            &barrel,
+            "Button",
+            &mut file_infos,
+            &mut HashSet::new(),
+            &FileSystemSourceHost,
+        )
+        .expect("resolve named re-export");
+        assert_eq!(resolved_named, (Kind::Client, button));
+
+        let resolved_star = resolve_export_declaration(
+            &barrel,
+            "StarThing",
+            &mut file_infos,
+            &mut HashSet::new(),
+            &FileSystemSourceHost,
+        )
+        .expect("resolve star export after missing star source is skipped");
+        assert_eq!(resolved_star, (Kind::Server, star));
     }
 
     #[test]
