@@ -214,6 +214,24 @@ mod tests {
     }
 
     #[test]
+    fn to_utf16_returns_exact_mapping_entry_for_multibyte_boundary() {
+        let source = "a🦀b";
+        let mapper = Utf16Mapper::new(source);
+
+        assert_eq!(mapper.to_utf16(5), 3, "exact boundary after emoji");
+    }
+
+    #[test]
+    fn to_utf16_returns_zero_before_first_mapping_entry() {
+        let mapper = Utf16Mapper {
+            mapping: vec![(2, 1)],
+            source_len: 2,
+        };
+
+        assert_eq!(mapper.to_utf16(1), 0, "before first mapping entry");
+    }
+
+    #[test]
     fn test_empty_string() {
         let source = "";
         let mapper = Utf16Mapper::new(source);

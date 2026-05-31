@@ -2398,6 +2398,22 @@ mod tests {
     }
 
     #[test]
+    fn lexical_normalize_collapses_current_directory_segments() {
+        assert_eq!(lexical_normalize(Path::new("a/./b")), PathBuf::from("a/b"));
+    }
+
+    #[test]
+    fn lexical_normalize_preserves_orphan_parent_segments() {
+        assert_eq!(lexical_normalize(Path::new("../x")), PathBuf::from("../x"));
+        assert_eq!(lexical_normalize(Path::new("..")), PathBuf::from(".."));
+    }
+
+    #[test]
+    fn normalize_for_compare_lowercases_uppercase_drive_letter() {
+        assert_eq!(normalize_for_compare(Path::new("C:/Foo/Bar")), "c:/Foo/Bar");
+    }
+
+    #[test]
     fn direct_export_extraction_helpers_cover_remaining_declaration_shapes() {
         let project = TempProject::new();
         let file = project.write(
