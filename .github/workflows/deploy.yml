@@ -27,7 +27,7 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: rustfmt, clippy
+          components: rustfmt, clippy, llvm-tools-preview
           target: wasm32-wasip1
           cache-key: test-${{ matrix.os }}
 

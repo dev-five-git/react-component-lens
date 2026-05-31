@@ -133,4 +133,31 @@ mod tests {
         assert_eq!(resolve_import(&entry, "./Typed.d.ts"), None);
         assert_eq!(resolve_import(&entry, "./Typed"), None);
     }
+
+    #[test]
+    fn resolves_js_specifier_to_ts_index_with_extension_alias() {
+        let project = TempProject::new();
+        let entry = project.write(
+            "entry.tsx",
+            "import { Widget } from './components/index.js';",
+        );
+        let index = project.write(
+            "components/index.ts",
+            "export function Widget() { return null; }",
+        );
+
+        assert_eq!(resolve_import(&entry, "./components/index.js"), Some(index));
+    }
+
+    #[test]
+    fn resolves_directory_import_to_index_main_file() {
+        let project = TempProject::new();
+        let entry = project.write("entry.tsx", "import { Widget } from './components';");
+        let index = project.write(
+            "components/index.tsx",
+            "export function Widget() { return null; }",
+        );
+
+        assert_eq!(resolve_import(&entry, "./components"), Some(index));
+    }
 }

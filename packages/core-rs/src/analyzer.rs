@@ -397,53 +397,50 @@ fn resolve_export_declaration(
         };
 
         if has_file_info {
-            if let Some(file_info) = file_infos.get(file_path) {
-                if export_name == "*" || file_info.component_names.contains(export_name) {
-                    Some((file_info.kind, file_path.to_path_buf()))
-                } else {
-                    let re_export = file_info
-                        .re_exports
-                        .get(export_name)
-                        .map(|target| (target.source.clone(), target.source_name.clone()));
-                    let star_exports = file_info.star_exports.clone();
-
-                    let re_export_resolution = if let Some((source, source_name)) = re_export
-                        && let Some(target_path) = resolve_import(file_path, &source)
-                    {
-                        resolve_export_declaration(
-                            &target_path,
-                            &source_name,
-                            file_infos,
-                            visited,
-                            host,
-                        )
-                    } else {
-                        None
-                    };
-
-                    if re_export_resolution.is_some() {
-                        re_export_resolution
-                    } else {
-                        let mut resolved_export = None;
-                        for source in star_exports {
-                            if resolved_export.is_none()
-                                && let Some(target_path) = resolve_import(file_path, &source)
-                                && let Some(resolved) = resolve_export_declaration(
-                                    &target_path,
-                                    export_name,
-                                    file_infos,
-                                    visited,
-                                    host,
-                                )
-                            {
-                                resolved_export = Some(resolved);
-                            }
-                        }
-                        resolved_export
-                    }
-                }
+            let file_info = file_infos.get(file_path)?;
+            if export_name == "*" || file_info.component_names.contains(export_name) {
+                Some((file_info.kind, file_path.to_path_buf()))
             } else {
-                None
+                let re_export = file_info
+                    .re_exports
+                    .get(export_name)
+                    .map(|target| (target.source.clone(), target.source_name.clone()));
+                let star_exports = file_info.star_exports.clone();
+
+                let re_export_resolution = if let Some((source, source_name)) = re_export
+                    && let Some(target_path) = resolve_import(file_path, &source)
+                {
+                    resolve_export_declaration(
+                        &target_path,
+                        &source_name,
+                        file_infos,
+                        visited,
+                        host,
+                    )
+                } else {
+                    None
+                };
+
+                if re_export_resolution.is_some() {
+                    re_export_resolution
+                } else {
+                    let mut resolved_export = None;
+                    for source in star_exports {
+                        if resolved_export.is_none()
+                            && let Some(target_path) = resolve_import(file_path, &source)
+                            && let Some(resolved) = resolve_export_declaration(
+                                &target_path,
+                                export_name,
+                                file_infos,
+                                visited,
+                                host,
+                            )
+                        {
+                            resolved_export = Some(resolved);
+                        }
+                    }
+                    resolved_export
+                }
             }
         } else {
             None
@@ -2057,10 +2054,7 @@ mod tests {
     #[test]
     fn direct_reexport_resolution_covers_cache_misses_and_missing_star_sources() {
         let project = TempProject::new();
-        let barrel = project.write(
-            "barrel.tsx",
-            "export { Button } from './button'; export * from './missing-star'; export * from './star';",
-        );
+        let barrel = project.write("barrel.tsx", "export { Button } from './button'; export * from './missing-star'; export * from './star';");
         let button = project.write(
             "button.tsx",
             "'use client'; export function Button(){ return <Button/>; }",
@@ -2117,6 +2111,24 @@ mod tests {
         assert_eq!(resolved_star, (Kind::Client, star.clone()));
         assert!(file_infos.contains_key(&barrel));
         assert!(file_infos.contains_key(&star));
+    }
+
+    #[test]
+    fn named_reexport_with_unresolvable_source_returns_none() {
+        let project = TempProject::new();
+        let barrel = project.write("barrel.tsx", "export { Missing } from './missing';");
+        let mut file_infos = HashMap::new();
+
+        let resolved = resolve_export_declaration(
+            &barrel,
+            "Missing",
+            &mut file_infos,
+            &mut HashSet::new(),
+            &FileSystemSourceHost,
+        );
+
+        assert_eq!(resolved, None);
+        assert!(file_infos.contains_key(&barrel));
     }
 
     #[test]
