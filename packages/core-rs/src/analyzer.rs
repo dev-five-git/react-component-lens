@@ -1925,11 +1925,48 @@ mod tests {
     }
 
     #[test]
+    fn lowercase_member_root_is_filtered_by_real_jsx_analysis() {
+        let source = "function Page(){ return <foo.Bar/>; }";
+        let usages = analyze_temp_source(Path::new("/virtual/lowercase-member.tsx"), source);
+
+        assert!(usages.iter().all(|usage| usage.tag_name != "foo.Bar"));
+    }
+
+    #[test]
     fn intrinsic_jsx_identifier_names_are_ignored() {
         let source = "function Page(){ return <div/>; }";
         let usages = analyze_temp_source(Path::new("/virtual/intrinsic.tsx"), source);
 
         assert!(!usages.iter().any(|usage| usage.tag_name == "div"));
+    }
+
+    #[test]
+    fn oxc_intrinsic_jsx_name_reaches_identifier_variant() {
+        let source = "function Page(){ return <div/>; }";
+        let allocator = Allocator::default();
+        let parsed = Parser::new(
+            &allocator,
+            source,
+            SourceType::from_path(Path::new("intrinsic.tsx")).expect("tsx source type"),
+        )
+        .parse();
+
+        let Statement::FunctionDeclaration(function) = &parsed.program.body[0] else {
+            panic!("expected function declaration");
+        };
+        let body = function.body.as_ref().expect("function body");
+        let Statement::ReturnStatement(return_statement) = &body.statements[0] else {
+            panic!("expected return statement");
+        };
+        let Some(Expression::JSXElement(element)) = &return_statement.argument else {
+            panic!("expected returned JSX element");
+        };
+
+        assert!(matches!(
+            &element.opening_element.name,
+            JSXElementName::Identifier(_)
+        ));
+        assert!(jsx_lookup_and_tag_name(&element.opening_element.name, source).is_none());
     }
 
     #[test]
@@ -2031,6 +2068,33 @@ mod tests {
         )
         .expect("resolve star export after missing star source is skipped");
         assert_eq!(resolved_star, (Kind::Server, star));
+    }
+
+    #[test]
+    fn star_reexport_cache_miss_skips_unresolvable_source_then_resolves() {
+        let project = TempProject::new();
+        let barrel = project.write(
+            "barrel.tsx",
+            "export * from './missing-star'; export * from './star';",
+        );
+        let star = project.write(
+            "star.tsx",
+            "'use client'; export function StarThing(){ return <StarThing/>; }",
+        );
+        let mut file_infos = HashMap::new();
+
+        let resolved_star = resolve_export_declaration(
+            &barrel,
+            "StarThing",
+            &mut file_infos,
+            &mut HashSet::new(),
+            &FileSystemSourceHost,
+        )
+        .expect("resolve star export after skipping missing star source");
+
+        assert_eq!(resolved_star, (Kind::Client, star.clone()));
+        assert!(file_infos.contains_key(&barrel));
+        assert!(file_infos.contains_key(&star));
     }
 
     #[test]
