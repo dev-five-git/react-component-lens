@@ -6,9 +6,9 @@
   },
   "usages": [
     {
-      "kind": "server",
+      "kind": "client",
       "tagName": "Star",
-      "sourceFilePath": "barrel.tsx",
+      "sourceFilePath": "Star.tsx",
       "ranges": [
         {
           "start": 9,
@@ -28,9 +28,9 @@
       ]
     },
     {
-      "kind": "server",
+      "kind": "client",
       "tagName": "Star",
-      "sourceFilePath": "barrel.tsx",
+      "sourceFilePath": "Star.tsx",
       "ranges": [
         {
           "start": 75,

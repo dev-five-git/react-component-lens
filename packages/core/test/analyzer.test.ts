@@ -1404,14 +1404,15 @@ test('does not highlight PascalCase variable exports that are not components', a
 test('highlights components through barrel re-exports', async () => {
   const project = createProject({
     'Page.tsx': [
-      "import { Button, ThemeConfig } from './components';",
+      "import { Button, Star, ThemeConfig } from './components';",
       '',
       'export default function Page() {',
-      '  return <Button />;',
+      '  return <><Button /><Star /></>;',
       '}',
     ].join('\n'),
     'components/index.ts': [
       "export { Button } from './Button';",
+      "export * from './Star';",
       "export { ThemeConfig } from './config';",
     ].join('\n'),
     'components/Button.tsx': [
@@ -1419,6 +1420,13 @@ test('highlights components through barrel re-exports', async () => {
       '',
       'export function Button() {',
       '  return <button />;',
+      '}',
+    ].join('\n'),
+    'components/Star.tsx': [
+      "'use client';",
+      '',
+      'export function Star() {',
+      '  return <span />;',
       '}',
     ].join('\n'),
     'components/config.ts': ['export const ThemeConfig = { dark: true };'].join(
@@ -1444,9 +1452,17 @@ test('highlights components through barrel re-exports', async () => {
       scope,
     )
 
-    expect(usages.length).toBe(1)
+    expect(usages.length).toBe(2)
     expect(usages[0]?.kind).toBe('client')
     expect(usages[0]?.tagName).toBe('Button')
+    expect(usages[0]?.sourceFilePath ?? '').toMatch(
+      /components[\\/]Button\.tsx$/u,
+    )
+    expect(usages[1]?.kind).toBe('client')
+    expect(usages[1]?.tagName).toBe('Star')
+    expect(usages[1]?.sourceFilePath ?? '').toMatch(
+      /components[\\/]Star\.tsx$/u,
+    )
   } finally {
     project[Symbol.dispose]()
   }

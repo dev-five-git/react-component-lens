@@ -51,6 +51,41 @@ jobs:
       # + Rust-vs-TS differential fuzz (1000 seeds, zero-diff required).
       - run: bun run test
 
+      # Coverage gate runs on Linux only to keep one toolchain install per OS.
+      - name: Install cargo-tarpaulin
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
+
+      # tarpaulin/LLVM cannot attribute coverage to the continuation lines of
+      # multi-line expressions, so they are impossible to ever mark covered.
+      # Collapse statements onto single lines first (wide rustfmt) so 100% is
+      # actually attainable, then measure. Pattern: dev-five-git/devup-ui.
+      # `bun run test:coverage` fails the job if line coverage is below 100%.
+      - name: Coverage (100% gate)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          printf '%s\n' \
+            'max_width = 100000' \
+            'tab_spaces = 4' \
+            'newline_style = "Unix"' \
+            'fn_call_width = 100000' \
+            'fn_params_layout = "Compressed"' \
+            'chain_width = 100000' \
+            'merge_derives = true' \
+            'use_small_heuristics = "Default"' > .rustfmt.toml
+          cargo fmt
+          bun run test:coverage
+
+      # Restore canonical formatting even if the coverage gate failed, so no
+      # later step (or cache) sees the collapsed source.
+      - name: Format rollback
+        if: ${{ always() && matrix.os == 'ubuntu-latest' }}
+        run: |
+          rm -f .rustfmt.toml
+          cargo fmt
+
   changepacks:
     name: changepacks
     runs-on: ubuntu-latest

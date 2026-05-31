@@ -1,5 +1,5 @@
-'use client'
+"use client";
 
 export function Widget() {
-  return <div />
+  return <div />;
 }

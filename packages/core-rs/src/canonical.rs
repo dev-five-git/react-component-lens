@@ -439,4 +439,41 @@ mod tests {
         let ranged_pos = result.find(ranged).unwrap();
         assert!(client_pos < server_pos && server_pos < ranged_pos);
     }
+
+    #[test]
+    fn test_compare_canonical_direct_empty_and_second_range_end_branches() {
+        let ranged = Usage {
+            kind: Kind::Server,
+            tag_name: "A".to_string(),
+            source_file_path: "/p/A.tsx".to_string(),
+            ranges: vec![Range { start: 1, end: 2 }],
+        };
+        let empty = Usage {
+            kind: Kind::Server,
+            tag_name: "A".to_string(),
+            source_file_path: "/p/A.tsx".to_string(),
+            ranges: vec![],
+        };
+        assert_eq!(
+            compare_canonical(&ranged, &empty),
+            std::cmp::Ordering::Greater
+        );
+
+        let short_second = Usage {
+            kind: Kind::Server,
+            tag_name: "A".to_string(),
+            source_file_path: "/p/A.tsx".to_string(),
+            ranges: vec![Range { start: 1, end: 2 }, Range { start: 3, end: 4 }],
+        };
+        let long_second = Usage {
+            kind: Kind::Server,
+            tag_name: "A".to_string(),
+            source_file_path: "/p/A.tsx".to_string(),
+            ranges: vec![Range { start: 1, end: 2 }, Range { start: 3, end: 5 }],
+        };
+        assert_eq!(
+            compare_canonical(&long_second, &short_second),
+            std::cmp::Ordering::Greater
+        );
+    }
 }

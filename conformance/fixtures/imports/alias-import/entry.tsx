@@ -1,5 +1,5 @@
-import { Widget as RenamedWidget } from './Widget'
+import { Widget as RenamedWidget } from "./Widget";
 
 export default function Page() {
-  return <RenamedWidget />
+  return <RenamedWidget />;
 }

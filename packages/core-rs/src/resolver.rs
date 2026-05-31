@@ -80,3 +80,57 @@ pub fn resolve_import(from_file: &Path, specifier: &str) -> Option<PathBuf> {
     }
     Some(path)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    static NEXT_PROJECT_ID: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempProject {
+        root: PathBuf,
+    }
+
+    impl TempProject {
+        fn new() -> Self {
+            let id = NEXT_PROJECT_ID.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir()
+                .join(format!("rcl-core-rs-resolver-{}-{id}", std::process::id()));
+            if root.exists() {
+                fs::remove_dir_all(&root).expect("remove stale temp project");
+            }
+            fs::create_dir_all(&root).expect("create temp project");
+            Self { root }
+        }
+
+        fn write(&self, relative: &str, text: &str) -> PathBuf {
+            let path = self.root.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent directories");
+            }
+            fs::write(&path, text).expect("write temp file");
+            path
+        }
+    }
+
+    impl Drop for TempProject {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    #[test]
+    fn rejects_declaration_file_resolution() {
+        let project = TempProject::new();
+        let entry = project.write("entry.tsx", "import { Typed } from './Typed';");
+        project.write("Typed.d.ts", "export declare function Typed(): unknown;");
+
+        assert!(is_rejected_dts(&project.root.join("Typed.d.ts")));
+        assert_eq!(resolve_import(&entry, "./Typed.d.ts"), None);
+        assert_eq!(resolve_import(&entry, "./Typed"), None);
+    }
+}

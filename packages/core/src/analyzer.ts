@@ -31,9 +31,9 @@ interface CachedAnalysis {
 
 interface CachedDirective {
   componentNames: Set<string>
-  hasStarExport: boolean
   kind: Exclude<ComponentKind, 'unknown'>
   reExports: Map<string, ReExportTarget>
+  starExports: string[]
   signature: string
 }
 
@@ -159,8 +159,11 @@ export class ComponentLensAnalyzer {
     const usages: ComponentUsage[] = []
     let resolvedPaths: Map<string, string> | undefined
     let fileInfos: Map<string, CachedDirective> | undefined
-    let reExportResolutions:
-      | Map<string, { sourceName: string; targetPath: string }>
+    let importResolutions:
+      | Map<
+          string,
+          { kind: Exclude<ComponentKind, 'unknown'>; sourceFilePath: string }
+        >
       | undefined
 
     if ((scope.element || scope.import) && analysis.imports.size > 0) {
@@ -196,46 +199,21 @@ export class ComponentLensAnalyzer {
         )
       }
 
-      const reExportTargets = new Set<string>()
-      reExportResolutions = new Map()
+      importResolutions = new Map()
 
       for (const [lookupName, entry] of analysis.imports) {
         if (analysis.localComponents.has(lookupName)) continue
         const resolvedFilePath = resolvedPaths.get(lookupName)
         if (!resolvedFilePath) continue
-        const fileInfo = fileInfos.get(resolvedFilePath)
-        if (!fileInfo) continue
-
-        const exportName = entry.exportName
-        if (exportName === '*') continue
-        if (fileInfo.componentNames.has(exportName)) continue
-
-        const reExport = fileInfo.reExports.get(exportName)
-        if (reExport) {
-          const targetPath = this.resolver.resolveImport(
-            resolvedFilePath,
-            reExport.source,
-          )
-          if (targetPath) {
-            reExportResolutions.set(lookupName, {
-              sourceName: reExport.sourceName,
-              targetPath,
-            })
-            if (!fileInfos.has(targetPath)) {
-              reExportTargets.add(targetPath)
-            }
-          }
-        }
-      }
-
-      if (reExportTargets.size > 0) {
-        await Promise.all(
-          Array.from(reExportTargets, (targetPath) =>
-            this.getFileComponentInfo(targetPath).then((info) => {
-              if (info) fileInfos!.set(targetPath, info)
-            }),
-          ),
+        const resolved = await this.resolveExportDeclaration(
+          resolvedFilePath,
+          entry.exportName,
+          fileInfos,
+          new Set(),
         )
+        if (resolved) {
+          importResolutions.set(lookupName, resolved)
+        }
       }
     }
 
@@ -249,51 +227,7 @@ export class ComponentLensAnalyzer {
       | undefined => {
       if (!resolvedPaths || !fileInfos) return undefined
 
-      const resolvedFilePath = resolvedPaths.get(lookupName)
-      if (!resolvedFilePath) return undefined
-
-      const fileInfo = fileInfos.get(resolvedFilePath)
-      if (!fileInfo) return undefined
-
-      const importEntry = analysis.imports.get(lookupName)
-      if (!importEntry) return undefined
-
-      const exportName = importEntry.exportName
-
-      if (exportName === '*') {
-        return { kind: fileInfo.kind, sourceFilePath: resolvedFilePath }
-      }
-
-      if (fileInfo.componentNames.has(exportName)) {
-        return { kind: fileInfo.kind, sourceFilePath: resolvedFilePath }
-      }
-
-      if (reExportResolutions) {
-        const reExportRes = reExportResolutions.get(lookupName)
-        if (reExportRes) {
-          const targetInfo = fileInfos.get(reExportRes.targetPath)
-          if (targetInfo) {
-            if (targetInfo.componentNames.has(reExportRes.sourceName)) {
-              return {
-                kind: targetInfo.kind,
-                sourceFilePath: reExportRes.targetPath,
-              }
-            }
-            if (targetInfo.hasStarExport) {
-              return {
-                kind: targetInfo.kind,
-                sourceFilePath: reExportRes.targetPath,
-              }
-            }
-          }
-        }
-      }
-
-      if (fileInfo.hasStarExport) {
-        return { kind: fileInfo.kind, sourceFilePath: resolvedFilePath }
-      }
-
-      return undefined
+      return importResolutions?.get(lookupName)
     }
 
     if (scope.element) {
@@ -435,18 +369,74 @@ export class ComponentLensAnalyzer {
       ? 'client'
       : 'server'
 
-    const { componentNames, hasStarExport, reExports } =
+    const { componentNames, reExports, starExports } =
       extractFileComponentExports(filePath, sourceText)
 
     const info: CachedDirective = {
       componentNames,
-      hasStarExport,
       kind,
       reExports,
+      starExports,
       signature,
     }
     this.directiveCache.set(filePath, info)
     return info
+  }
+
+  private async resolveExportDeclaration(
+    filePath: string,
+    exportName: string,
+    fileInfos: Map<string, CachedDirective>,
+    visited: Set<string>,
+  ): Promise<
+    | { kind: Exclude<ComponentKind, 'unknown'>; sourceFilePath: string }
+    | undefined
+  > {
+    const visitKey = filePath + '\0' + exportName
+    if (visited.has(visitKey)) return undefined
+    visited.add(visitKey)
+
+    let fileInfo = fileInfos.get(filePath)
+    if (!fileInfo) {
+      fileInfo = await this.getFileComponentInfo(filePath)
+      if (!fileInfo) return undefined
+      fileInfos.set(filePath, fileInfo)
+    }
+
+    if (exportName === '*' || fileInfo.componentNames.has(exportName)) {
+      return { kind: fileInfo.kind, sourceFilePath: filePath }
+    }
+
+    const reExport = fileInfo.reExports.get(exportName)
+    if (reExport) {
+      const targetPath = this.resolver.resolveImport(filePath, reExport.source)
+      if (targetPath) {
+        const resolved = await this.resolveExportDeclaration(
+          targetPath,
+          reExport.sourceName,
+          fileInfos,
+          visited,
+        )
+        if (resolved) return resolved
+      }
+    }
+
+    for (let i = 0; i < fileInfo.starExports.length; i++) {
+      const targetPath = this.resolver.resolveImport(
+        filePath,
+        fileInfo.starExports[i]!,
+      )
+      if (!targetPath) continue
+      const resolved = await this.resolveExportDeclaration(
+        targetPath,
+        exportName,
+        fileInfos,
+        visited,
+      )
+      if (resolved) return resolved
+    }
+
+    return undefined
   }
 
   private getAnalysis(
@@ -1070,8 +1060,8 @@ function extractFileComponentExports(
   sourceText: string,
 ): {
   componentNames: Set<string>
-  hasStarExport: boolean
   reExports: Map<string, ReExportTarget>
+  starExports: string[]
 } {
   const sourceFile = ts.createSourceFile(
     filePath,
@@ -1083,7 +1073,7 @@ function extractFileComponentExports(
 
   const componentNames = new Set<string>()
   const reExports = new Map<string, ReExportTarget>()
-  let hasStarExport = false
+  const starExports: string[] = []
   const localComponentNames = new Set<string>()
   const statements = sourceFile.statements
 
@@ -1176,7 +1166,10 @@ function extractFileComponentExports(
       const exportDecl = statement as ts.ExportDeclaration
       if (!exportDecl.exportClause) {
         if (exportDecl.moduleSpecifier) {
-          hasStarExport = true
+          const moduleSpec = exportDecl.moduleSpecifier
+          if (moduleSpec.kind === SK_StringLiteral) {
+            starExports.push((moduleSpec as ts.StringLiteral).text)
+          }
         }
       } else if (exportDecl.exportClause.kind === SK_NamedExports) {
         const elements = (exportDecl.exportClause as ts.NamedExports).elements
@@ -1222,7 +1215,7 @@ function extractFileComponentExports(
     }
   }
 
-  return { componentNames, hasStarExport, reExports }
+  return { componentNames, reExports, starExports }
 }
 
 function getScriptKind(filePath: string): ts.ScriptKind {

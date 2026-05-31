@@ -23,12 +23,21 @@ impl ReactComponentLensExtension {
     fn language_server_binary_path(
         &mut self,
         language_server_id: &zed::LanguageServerId,
-        _worktree: &zed::Worktree,
+        worktree: &zed::Worktree,
     ) -> Result<String> {
         if let Some(path) = &self.cached_binary_path {
             if fs::metadata(path).is_ok_and(|m| m.is_file()) {
                 return Ok(path.clone());
             }
+        }
+
+        // Prefer a `rcl-lsp` binary already on PATH. This lets power users pin
+        // their own build and, crucially, makes the extension usable as a Zed
+        // dev extension without a published GitHub Release (just
+        // `cargo build -p lsp-rs --bin rcl-lsp` and put it on PATH).
+        if let Some(path) = worktree.which(BINARY_NAME) {
+            self.cached_binary_path = Some(path.clone());
+            return Ok(path);
         }
 
         zed::set_language_server_installation_status(

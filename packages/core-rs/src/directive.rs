@@ -187,4 +187,16 @@ mod tests {
             b"// comment1\n// comment2\n'use client'"
         ));
     }
+
+    #[test]
+    fn long_line_comment_without_newline_scans_to_end() {
+        assert!(!has_use_client_directive(
+            b"// comment with no trailing newline"
+        ));
+    }
+
+    #[test]
+    fn slash_that_is_not_a_comment_stops_scanning() {
+        assert!(!has_use_client_directive(b"/ not a comment"));
+    }
 }

@@ -27,6 +27,7 @@
     "test:wasm": "cargo build --target wasm32-wasip1 --release -p zed-react-component-lens",
     "test:fuzz": "bun run test:fuzz:build && bun run --filter @react-component-lens/conformance-harness fuzz:ci",
     "test:fuzz:build": "cargo build --release -p core-rs --bin emit-canonical",
+    "test:coverage": "cargo tarpaulin --workspace --exclude zed-react-component-lens --exclude-files \"**/main.rs\" --exclude-files \"**/src/bin/**\" --exclude-files \"**/tests/**\" --out Stdout --fail-under 100",
     "prepare": "husky"
   },
   "devDependencies": {

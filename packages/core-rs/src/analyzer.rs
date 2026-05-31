@@ -49,6 +49,20 @@ impl Default for ScopeConfig {
     }
 }
 
+/// Source reader used when imported modules must be analyzed from an editor's
+/// open-buffer state before falling back to the filesystem.
+pub trait SourceHost {
+    fn read_to_string(&self, file_path: &Path) -> Option<String>;
+}
+
+struct FileSystemSourceHost;
+
+impl SourceHost for FileSystemSourceHost {
+    fn read_to_string(&self, file_path: &Path) -> Option<String> {
+        fs::read_to_string(file_path).ok()
+    }
+}
+
 #[derive(Clone)]
 struct NamedRange {
     name: String,
@@ -102,9 +116,9 @@ struct ReExportTarget {
 
 struct FileComponentInfo {
     component_names: BTreeSet<String>,
-    has_star_export: bool,
     kind: Kind,
     re_exports: BTreeMap<String, ReExportTarget>,
+    star_exports: Vec<String>,
 }
 
 enum FunctionLike<'a> {
@@ -145,7 +159,7 @@ pub fn analyze_fixture(case_dir: &Path) -> String {
     };
 
     let scope = read_scope(case_dir);
-    let mut usages = analyze_document(&entry_path, &source_text, scope);
+    let mut usages = analyze_document(&entry_path, &source_text, scope, &FileSystemSourceHost);
     for usage in &mut usages {
         usage.source_file_path = to_posix_relative(case_dir, Path::new(&usage.source_file_path));
     }
@@ -159,7 +173,19 @@ pub fn analyze_fixture(case_dir: &Path) -> String {
 /// real filesystem via [`crate::resolver::resolve_import`].
 #[must_use]
 pub fn analyze_source(file_path: &Path, source_text: &str) -> Vec<Usage> {
-    analyze_document(file_path, source_text, ScopeConfig::default())
+    analyze_source_with_host(file_path, source_text, &FileSystemSourceHost)
+}
+
+/// Analyze a single in-memory source file using `host` to read imported
+/// modules. This keeps the requested document text explicit while allowing LSP
+/// integrations to resolve dependencies from unsaved open buffers.
+#[must_use]
+pub fn analyze_source_with_host(
+    file_path: &Path,
+    source_text: &str,
+    host: &impl SourceHost,
+) -> Vec<Usage> {
+    analyze_document(file_path, source_text, ScopeConfig::default(), host)
 }
 
 /// Read `file_path`, analyze it, relativize `source_file_path` to the file's
@@ -179,14 +205,19 @@ pub fn analyze_path_canonical(file_path: &Path) -> String {
 }
 
 #[allow(clippy::too_many_lines)]
-fn analyze_document(file_path: &Path, source_text: &str, scope: ScopeConfig) -> Vec<Usage> {
+fn analyze_document(
+    file_path: &Path,
+    source_text: &str,
+    scope: ScopeConfig,
+    host: &impl SourceHost,
+) -> Vec<Usage> {
     let analysis = parse_file_analysis(file_path, source_text);
     let mut usages = Vec::new();
     let file_path_text = file_path.to_string_lossy().to_string();
 
     let mut resolved_paths: HashMap<String, PathBuf> = HashMap::new();
     let mut file_infos: HashMap<PathBuf, FileComponentInfo> = HashMap::new();
-    let mut re_export_resolutions: HashMap<String, (String, PathBuf)> = HashMap::new();
+    let mut import_resolutions: HashMap<String, (Kind, PathBuf)> = HashMap::new();
 
     if (scope.element || scope.import) && !analysis.imports.is_empty() {
         let mut unique_file_paths = BTreeSet::new();
@@ -205,12 +236,11 @@ fn analyze_document(file_path: &Path, source_text: &str, scope: ScopeConfig) -> 
         }
 
         for resolved_path in unique_file_paths {
-            if let Some(info) = get_file_component_info(&resolved_path) {
+            if let Some(info) = get_file_component_info(&resolved_path, host) {
                 file_infos.insert(resolved_path, info);
             }
         }
 
-        let mut re_export_targets = BTreeSet::new();
         for (lookup_name, entry) in &analysis.imports {
             if analysis.local_components.contains_key(lookup_name) {
                 continue;
@@ -218,30 +248,14 @@ fn analyze_document(file_path: &Path, source_text: &str, scope: ScopeConfig) -> 
             let Some(resolved_file_path) = resolved_paths.get(lookup_name) else {
                 continue;
             };
-            let Some(file_info) = file_infos.get(resolved_file_path) else {
-                continue;
-            };
-
-            if entry.export_name == "*" || file_info.component_names.contains(&entry.export_name) {
-                continue;
-            }
-
-            if let Some(re_export) = file_info.re_exports.get(&entry.export_name)
-                && let Some(target_path) = resolve_import(resolved_file_path, &re_export.source)
-            {
-                re_export_resolutions.insert(
-                    lookup_name.clone(),
-                    (re_export.source_name.clone(), target_path.clone()),
-                );
-                if !file_infos.contains_key(&target_path) {
-                    re_export_targets.insert(target_path);
-                }
-            }
-        }
-
-        for target_path in re_export_targets {
-            if let Some(info) = get_file_component_info(&target_path) {
-                file_infos.insert(target_path, info);
+            if let Some(resolved) = resolve_export_declaration(
+                resolved_file_path,
+                &entry.export_name,
+                &mut file_infos,
+                &mut HashSet::new(),
+                host,
+            ) {
+                import_resolutions.insert(lookup_name.clone(), resolved);
             }
         }
     }
@@ -261,8 +275,7 @@ fn analyze_document(file_path: &Path, source_text: &str, scope: ScopeConfig) -> 
             if let Some((kind, source_file_path)) = check_imported_component(
                 &analysis,
                 &resolved_paths,
-                &file_infos,
-                &re_export_resolutions,
+                &import_resolutions,
                 &jsx_tag.lookup_name,
             ) {
                 usages.push(Usage {
@@ -277,13 +290,9 @@ fn analyze_document(file_path: &Path, source_text: &str, scope: ScopeConfig) -> 
 
     if scope.import && !resolved_paths.is_empty() {
         for (name, entry) in &analysis.imports {
-            if let Some((kind, source_file_path)) = check_imported_component(
-                &analysis,
-                &resolved_paths,
-                &file_infos,
-                &re_export_resolutions,
-                name,
-            ) {
+            if let Some((kind, source_file_path)) =
+                check_imported_component(&analysis, &resolved_paths, &import_resolutions, name)
+            {
                 usages.push(Usage {
                     kind,
                     ranges: entry.ranges.clone(),
@@ -361,28 +370,59 @@ fn analyze_document(file_path: &Path, source_text: &str, scope: ScopeConfig) -> 
 fn check_imported_component(
     analysis: &FileAnalysis,
     resolved_paths: &HashMap<String, PathBuf>,
-    file_infos: &HashMap<PathBuf, FileComponentInfo>,
-    re_export_resolutions: &HashMap<String, (String, PathBuf)>,
+    import_resolutions: &HashMap<String, (Kind, PathBuf)>,
     lookup_name: &str,
 ) -> Option<(Kind, PathBuf)> {
-    let resolved_file_path = resolved_paths.get(lookup_name)?;
-    let file_info = file_infos.get(resolved_file_path)?;
-    let import_entry = analysis.imports.get(lookup_name)?;
-    let export_name = &import_entry.export_name;
+    resolved_paths.get(lookup_name)?;
+    analysis.imports.get(lookup_name)?;
+    import_resolutions.get(lookup_name).cloned()
+}
 
+fn resolve_export_declaration(
+    file_path: &Path,
+    export_name: &str,
+    file_infos: &mut HashMap<PathBuf, FileComponentInfo>,
+    visited: &mut HashSet<(PathBuf, String)>,
+    host: &impl SourceHost,
+) -> Option<(Kind, PathBuf)> {
+    let visit_key = (file_path.to_path_buf(), export_name.to_string());
+    if !visited.insert(visit_key) {
+        return None;
+    }
+
+    if !file_infos.contains_key(file_path) {
+        let info = get_file_component_info(file_path, host)?;
+        file_infos.insert(file_path.to_path_buf(), info);
+    }
+
+    let file_info = file_infos.get(file_path)?;
     if export_name == "*" || file_info.component_names.contains(export_name) {
-        return Some((file_info.kind, resolved_file_path.clone()));
+        return Some((file_info.kind, file_path.to_path_buf()));
     }
 
-    if let Some((source_name, target_path)) = re_export_resolutions.get(lookup_name)
-        && let Some(target_info) = file_infos.get(target_path)
-        && (target_info.component_names.contains(source_name) || target_info.has_star_export)
+    let re_export = file_info
+        .re_exports
+        .get(export_name)
+        .map(|target| (target.source.clone(), target.source_name.clone()));
+    let star_exports = file_info.star_exports.clone();
+
+    if let Some((source, source_name)) = re_export
+        && let Some(target_path) = resolve_import(file_path, &source)
+        && let Some(resolved) =
+            resolve_export_declaration(&target_path, &source_name, file_infos, visited, host)
     {
-        return Some((target_info.kind, target_path.clone()));
+        return Some(resolved);
     }
 
-    if file_info.has_star_export {
-        return Some((file_info.kind, resolved_file_path.clone()));
+    for source in star_exports {
+        let Some(target_path) = resolve_import(file_path, &source) else {
+            continue;
+        };
+        if let Some(resolved) =
+            resolve_export_declaration(&target_path, export_name, file_infos, visited, host)
+        {
+            return Some(resolved);
+        }
     }
 
     None
@@ -1197,28 +1237,32 @@ fn is_self_closing_opening(opening: &JSXOpeningElement<'_>, source_text: &str) -
     end >= 2 && source_text.as_bytes().get(end - 2..end) == Some(b"/>")
 }
 
-fn get_file_component_info(file_path: &Path) -> Option<FileComponentInfo> {
-    let source_text = fs::read_to_string(file_path).ok()?;
+fn get_file_component_info(file_path: &Path, host: &impl SourceHost) -> Option<FileComponentInfo> {
+    let source_text = host.read_to_string(file_path)?;
     let kind = if has_use_client_directive(source_text.as_bytes()) {
         Kind::Client
     } else {
         Kind::Server
     };
-    let (component_names, has_star_export, re_exports) =
+    let (component_names, re_exports, star_exports) =
         extract_file_component_exports(file_path, &source_text);
 
     Some(FileComponentInfo {
         component_names,
-        has_star_export,
         kind,
         re_exports,
+        star_exports,
     })
 }
 
 fn extract_file_component_exports(
     file_path: &Path,
     source_text: &str,
-) -> (BTreeSet<String>, bool, BTreeMap<String, ReExportTarget>) {
+) -> (
+    BTreeSet<String>,
+    BTreeMap<String, ReExportTarget>,
+    Vec<String>,
+) {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(file_path).unwrap_or_else(|_| SourceType::ts());
     let parsed = Parser::new(&allocator, source_text, source_type).parse();
@@ -1226,7 +1270,7 @@ fn extract_file_component_exports(
 
     let mut component_names = BTreeSet::new();
     let mut re_exports = BTreeMap::new();
-    let mut has_star_export = false;
+    let mut star_exports = Vec::new();
     let mut local_component_names = BTreeSet::new();
 
     for statement in statements {
@@ -1274,13 +1318,13 @@ fn extract_file_component_exports(
                 &mut component_names,
             ),
             Statement::ExportAllDeclaration(export_all) if export_all.exported.is_none() => {
-                has_star_export = true;
+                star_exports.push(export_all.source.value.as_str().to_string());
             }
             _ => {}
         }
     }
 
-    (component_names, has_star_export, re_exports)
+    (component_names, re_exports, star_exports)
 }
 
 fn collect_local_component_export_names(
@@ -1659,4 +1703,784 @@ fn to_posix_relative(from_dir: &Path, absolute: &Path) -> String {
     };
     abs.strip_prefix(&prefix)
         .map_or(abs.clone(), std::string::ToString::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use oxc_allocator::CloneIn;
+
+    use super::*;
+    use crate::Kind;
+
+    static NEXT_PROJECT_ID: AtomicUsize = AtomicUsize::new(0);
+
+    struct TempProject {
+        root: PathBuf,
+    }
+
+    impl TempProject {
+        fn new() -> Self {
+            let id = NEXT_PROJECT_ID.fetch_add(1, Ordering::Relaxed);
+            let root = std::env::temp_dir()
+                .join(format!("rcl-core-rs-analyzer-{}-{id}", std::process::id()));
+            if root.exists() {
+                fs::remove_dir_all(&root).expect("remove stale temp project");
+            }
+            fs::create_dir_all(&root).expect("create temp project");
+            Self { root }
+        }
+
+        fn write(&self, relative: &str, text: &str) -> PathBuf {
+            let path = self.root.join(relative);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("create parent directories");
+            }
+            fs::write(&path, text).expect("write temp source file");
+            path
+        }
+
+        fn mkdir(&self, relative: &str) -> PathBuf {
+            let path = self.root.join(relative);
+            fs::create_dir_all(&path).expect("create temp directory");
+            path
+        }
+    }
+
+    impl Drop for TempProject {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn names_with_kind(usages: &[Usage], kind: Kind) -> BTreeSet<String> {
+        usages
+            .iter()
+            .filter(|usage| usage.kind == kind)
+            .map(|usage| usage.tag_name.clone())
+            .collect()
+    }
+
+    fn analyze_temp_source(path: &Path, source: &str) -> Vec<Usage> {
+        analyze_source(path, source)
+    }
+
+    #[test]
+    fn fixture_and_path_fallbacks_return_empty_canonical_json() {
+        let project = TempProject::new();
+        assert_eq!(analyze_fixture(&project.root), "[]");
+
+        project.mkdir("entry.tsx");
+        assert_eq!(analyze_fixture(&project.root), "[]");
+        assert_eq!(
+            analyze_path_canonical(&project.root.join("missing.tsx")),
+            "[]"
+        );
+    }
+
+    #[test]
+    fn analyze_path_canonical_relativizes_existing_file() {
+        let project = TempProject::new();
+        let entry = project.write("entry.tsx", "export function Page(){ return <Page/>; }");
+
+        let json = analyze_path_canonical(&entry);
+
+        assert!(json.contains(r#""sourceFilePath":"entry.tsx""#));
+        assert!(json.contains(r#""tagName":"Page""#));
+    }
+
+    #[test]
+    fn fixture_scope_handles_invalid_json_and_disabled_element_scope() {
+        let invalid = TempProject::new();
+        invalid.write("entry.tsx", "export function Page(){ return <Page/>; }");
+        invalid.write("scope.json", "{");
+        assert!(analyze_fixture(&invalid.root).contains(r#""tagName":"Page""#));
+
+        let scoped = TempProject::new();
+        scoped.write("entry.tsx", "export function Page(){ return <Page/>; }");
+        scoped.write(
+            "scope.json",
+            r#"{"declaration":false,"element":false,"export":false,"import":false,"type":false}"#,
+        );
+        assert_eq!(analyze_fixture(&scoped.root), "[]");
+    }
+
+    #[test]
+    fn top_level_declarations_and_exports_cover_component_forms() {
+        let path = Path::new("/virtual/forms.tsx");
+        let source = r"
+            export function ExportedFunction(){ return <ExportedFunction/>; }
+            export class ExportedClass { render(){ return <ExportedClass/>; } }
+            export type ExportedType = Props;
+            export interface ExportedInterface { child: Props }
+            export default class DefaultClass { render(){ return <DefaultClass/>; } }
+            export default NamedDefault;
+            class ClassExpressionBase {}
+            const ClassExpression = class NamedInner extends ClassExpressionBase { render(){ return <ClassExpression/>; } };
+            const PlainClass = class { render(){ return <PlainClass/>; } };
+            function lower(){ return <lower/>; }
+            function Local(){ return <Local/>; }
+            export { Local as ExportedLocal };
+            type Props = ExportedType;
+            function UsesTypes(props: ExportedInterface): ExportedType { return <UsesTypes/>; }
+        ";
+
+        let usages = analyze_temp_source(path, source);
+        let server_names = names_with_kind(&usages, Kind::Server);
+
+        for expected in [
+            "ExportedFunction",
+            "ExportedClass",
+            "DefaultClass",
+            "ClassExpression",
+            "PlainClass",
+            "Local",
+            "ExportedType",
+            "ExportedInterface",
+            "UsesTypes",
+        ] {
+            assert!(
+                server_names.contains(expected),
+                "missing {expected} in {server_names:?}"
+            );
+        }
+        assert!(!server_names.contains("lower"));
+    }
+
+    #[test]
+    fn variable_component_detection_covers_skipped_and_async_initializer_paths() {
+        let path = Path::new("/virtual/variables.tsx");
+        let source = r"
+            let [ArrayPattern] = [];
+            let MissingInitializer;
+            const lower = () => <lower/>;
+            const AsyncClient = async () => null;
+            const Wrapped = memo(function WrappedInner(){ return null; });
+            const NotWrapped = notMemo(() => null);
+            function Page(){ return <><AsyncClient/><Wrapped/></>; }
+        ";
+
+        let usages = analyze_temp_source(path, source);
+        let server_names = names_with_kind(&usages, Kind::Server);
+
+        assert!(server_names.contains("Wrapped"));
+        assert!(!server_names.contains("MissingInitializer"));
+        assert!(!server_names.contains("NotWrapped"));
+    }
+
+    #[test]
+    fn server_component_event_handler_inference_covers_inline_refs_and_use_server() {
+        let path = Path::new("/virtual/inference.tsx");
+        let source = r#"
+            function InlineClient(){ return <button onClick={() => 1}><Child/></button>; }
+            function RefClient(){ function handle(){ return 1; } return <button onClick={handle}><Child/></button>; }
+            function ServerAction(){ function handle(){ "use server"; return 1; } return <button onClick={handle}><Child/></button>; }
+            function NonEvent(){ const value = 1; return <button disabled><Child/></button>; }
+            async function AsyncServer(){ return <Child/>; }
+            function Child(){ return <Child/>; }
+        "#;
+
+        let usages = analyze_temp_source(path, source);
+        let client_names = names_with_kind(&usages, Kind::Client);
+        let server_names = names_with_kind(&usages, Kind::Server);
+
+        assert!(client_names.contains("InlineClient"));
+        assert!(client_names.contains("RefClient"));
+        assert!(server_names.contains("ServerAction"));
+        assert!(server_names.contains("NonEvent"));
+        assert!(server_names.contains("AsyncServer"));
+    }
+
+    #[test]
+    fn jsx_member_namespaces_this_and_lowercase_roots_are_filtered() {
+        let source = r"
+            import * as UI from './ui';
+            import * as lowercase from './ui';
+            function Page(){ return <><UI.Card/><UI.Nested.Card/><lowercase.Card/><this.Card/><svg:path /></>; }
+        ";
+        let project = TempProject::new();
+        let entry = project.write("entry.tsx", source);
+        project.write("ui.tsx", "'use client'; export function Card(){ return <Card/>; } export const Nested = { Card };");
+
+        let source = fs::read_to_string(&entry).expect("read entry");
+        let usages = analyze_source(&entry, &source);
+
+        assert!(usages.iter().any(|usage| usage.tag_name == "UI.Card"));
+        assert!(
+            usages
+                .iter()
+                .any(|usage| usage.tag_name == "UI.Nested.Card")
+        );
+        assert!(
+            !usages
+                .iter()
+                .any(|usage| usage.tag_name == "lowercase.Card")
+        );
+        assert!(!usages.iter().any(|usage| usage.tag_name == "this.Card"));
+        assert!(!usages.iter().any(|usage| usage.tag_name == "svg:path"));
+    }
+
+    #[test]
+    fn imported_components_cover_resolution_skips_reexports_and_star_fallbacks() {
+        let project = TempProject::new();
+        let entry = project.write(
+            "entry.tsx",
+            r"
+                import Missing from './missing';
+                import LocalShadow from './client';
+                import { LocalShadow } from './server';
+                import { Button } from './barrel';
+                import { StarThing } from './star-barrel';
+                import { MissingStar } from './unresolved-star-barrel';
+                import { LoopThing } from './cycle-a';
+                import { NotAComponent as lowerAlias } from './client';
+                function Page(){ return <><Missing/><LocalShadow/><Button/><StarThing/><MissingStar/><LoopThing/><lowerAlias/></>; }
+                function LocalShadow(){ return <LocalShadow/>; }
+            ",
+        );
+        project.write(
+            "client.tsx",
+            "'use client'; export function NotAComponent(){ return <NotAComponent/>; }",
+        );
+        project.write(
+            "server.tsx",
+            "export function LocalShadow(){ return <LocalShadow/>; }",
+        );
+        project.write(
+            "barrel.tsx",
+            "export { Button } from './button'; export { lower as Lower } from './button';",
+        );
+        project.write(
+            "button.tsx",
+            "'use client'; export function Button(){ return <Button/>; }",
+        );
+        project.write("star-barrel.tsx", "export * from './star';");
+        project.write(
+            "star.tsx",
+            "'use client'; export function StarThing(){ return <StarThing/>; }",
+        );
+        project.write(
+            "unresolved-star-barrel.tsx",
+            "export * from './missing-star'; export * from './star';",
+        );
+        project.write("cycle-a.tsx", "export * from './cycle-b';");
+        project.write("cycle-b.tsx", "export * from './cycle-a';");
+
+        let source = fs::read_to_string(&entry).expect("read entry");
+        let usages = analyze_source(&entry, &source);
+        let client_names = names_with_kind(&usages, Kind::Client);
+        let server_names = names_with_kind(&usages, Kind::Server);
+
+        assert!(client_names.contains("Button"));
+        assert!(client_names.contains("StarThing"));
+        assert!(
+            usages.iter().any(|usage| usage.tag_name == "StarThing"
+                && usage.source_file_path.ends_with("star.tsx"))
+        );
+        assert!(server_names.contains("LocalShadow"));
+        assert!(!client_names.contains("Missing"));
+        assert!(!client_names.contains("MissingStar"));
+        assert!(!server_names.contains("LoopThing"));
+    }
+
+    #[test]
+    fn source_host_analysis_prefers_host_text_for_imported_modules() {
+        struct MemoryHost {
+            files: BTreeMap<PathBuf, String>,
+        }
+
+        impl SourceHost for MemoryHost {
+            fn read_to_string(&self, file_path: &Path) -> Option<String> {
+                self.files.get(file_path).cloned()
+            }
+        }
+
+        let project = TempProject::new();
+        let entry = project.write(
+            "entry.tsx",
+            "import { Button } from './button'; function Page(){ return <Button/>; }",
+        );
+        let button = project.write(
+            "button.tsx",
+            "export function Button(){ return <Button/>; }",
+        );
+        let source = fs::read_to_string(&entry).expect("read entry");
+        let host = MemoryHost {
+            files: BTreeMap::from([(
+                button,
+                "'use client'; export function Button(){ return <Button/>; }".to_string(),
+            )]),
+        };
+
+        let usages = analyze_source_with_host(&entry, &source, &host);
+
+        assert!(names_with_kind(&usages, Kind::Client).contains("Button"));
+    }
+
+    #[test]
+    fn extract_file_component_exports_covers_default_and_named_export_shapes() {
+        let project = TempProject::new();
+        let exports = project.write(
+            "exports.tsx",
+            r"
+                function Named(){ return <Named/>; }
+                class LocalClass { render(){ return <LocalClass/>; } }
+                const Variable = () => <Variable/>;
+                const Wrapped = React.memo(function WrappedInner(){ return <Wrapped/>; });
+                const NotComponent = value;
+                export { Named, LocalClass as RenamedClass, Variable, Wrapped, NotComponent };
+                export default Named;
+            ",
+        );
+        let default_function = project.write(
+            "default-function.tsx",
+            "export default function(){ return <Anon/>; }",
+        );
+        let default_class = project.write(
+            "default-class.tsx",
+            "export default class { render(){ return <Anon/>; } }",
+        );
+        let default_exprs = project.write(
+            "default-exprs.tsx",
+            "export default () => <Anon/>; export const Other = 1;",
+        );
+        let default_wrapped = project.write(
+            "default-wrapped.tsx",
+            "export default memo(function Wrapped(){ return <Wrapped/>; });",
+        );
+
+        let (names, _, _) = extract_file_component_exports(
+            &exports,
+            &fs::read_to_string(&exports).expect("read exports"),
+        );
+        for expected in ["Named", "RenamedClass", "Variable", "Wrapped", "default"] {
+            assert!(
+                names.contains(expected),
+                "missing {expected} from {names:?}"
+            );
+        }
+        assert!(!names.contains("NotComponent"));
+
+        for path in [
+            default_function,
+            default_class,
+            default_exprs,
+            default_wrapped,
+        ] {
+            let (names, _, _) = extract_file_component_exports(
+                &path,
+                &fs::read_to_string(&path).expect("read default export"),
+            );
+            assert!(
+                names.contains("default"),
+                "missing default from {path:?}: {names:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn module_export_names_support_string_literals_in_imports_and_exports() {
+        let project = TempProject::new();
+        let entry = project.write("entry.tsx", "import { 'ClientThing' as ClientThing } from './client'; function Page(){ return <ClientThing/>; }");
+        project.write("client.tsx", "'use client'; const ClientThing = () => <ClientThing/>; export { ClientThing as 'ClientThing' };");
+
+        let source = fs::read_to_string(&entry).expect("read entry");
+        let usages = analyze_source(&entry, &source);
+
+        assert!(names_with_kind(&usages, Kind::Client).contains("ClientThing"));
+    }
+
+    #[test]
+    fn miscellaneous_parser_branches_are_exercised_by_valid_sources() {
+        let project = TempProject::new();
+        let entry = project.write(
+            "entry.tsx",
+            r#"
+                import './side-effect';
+                export * from './star';
+                export { lower as lower } from './star';
+                enum LocalEnum { A }
+                interface TopInterface { value: string }
+                type TopType = TopInterface;
+                function Page(){ const [ArrayPattern] = []; let MissingInitializer; const expression = function named(){ "use server"; return null; }; return <Widget bare onClick={function(){ return expression; }} onMouseEnter={1}/>; }
+                export default function(){ return <Anon/>; }
+                export default class NamedDefaultClass { render(){ return <NamedDefaultClass/>; } }
+                export default class { render(){ return <AnonClass/>; } }
+                const FunctionExpression = function(){ return <FunctionExpression/>; };
+                const MemoArrow = memo(() => null);
+                const MemoMissing = memo(1);
+                const ReactComputed = React['memo'](() => null);
+            "#,
+        );
+        project.write("side-effect.ts", "export const value = 1;");
+        project.write("star.tsx", "export function Star(){ return <Star/>; }");
+
+        let source = fs::read_to_string(&entry).expect("read entry");
+        let usages = analyze_source(&entry, &source);
+        let server_names = names_with_kind(&usages, Kind::Server);
+
+        for expected in [
+            "TopInterface",
+            "TopType",
+            "NamedDefaultClass",
+            "FunctionExpression",
+            "MemoArrow",
+        ] {
+            assert!(
+                server_names.contains(expected),
+                "missing {expected} from {server_names:?}"
+            );
+        }
+        assert!(!server_names.contains("MemoMissing"));
+        assert!(!server_names.contains("ReactComputed"));
+    }
+
+    #[test]
+    fn invalid_utf8_import_covers_resolved_file_without_component_info() {
+        let project = TempProject::new();
+        let entry = project.write(
+            "entry.tsx",
+            "import Bad from './bad'; function Page(){ return <Bad/>; }",
+        );
+        fs::write(project.root.join("bad.tsx"), [0xff, 0xfe, 0xfd])
+            .expect("write invalid utf8 source");
+
+        let source = fs::read_to_string(&entry).expect("read entry");
+        let usages = analyze_source(&entry, &source);
+
+        assert!(!usages.iter().any(|usage| usage.tag_name == "Bad"));
+    }
+
+    #[test]
+    fn default_class_expression_and_non_component_default_are_visited() {
+        let path = Path::new("/virtual/defaults.tsx");
+        let source = r"
+            class Base {}
+            export default (class NamedExpression extends Base { render(){ return <NamedExpression/>; } });
+            export default 1;
+            function Plain(){ return <div onClick={1}/>; }
+        ";
+
+        let usages = analyze_temp_source(path, source);
+
+        assert!(usages.iter().any(|usage| usage.tag_name == "Plain"));
+    }
+
+    #[test]
+    fn private_fallback_helpers_cover_none_and_lowercase_paths() {
+        let analysis = FileAnalysis {
+            export_references: Vec::new(),
+            imports: BTreeMap::new(),
+            jsx_tags: Vec::new(),
+            local_components: BTreeMap::new(),
+            own_component_kind: Kind::Server,
+            type_identifiers: Vec::new(),
+        };
+        assert!(
+            check_imported_component(&analysis, &HashMap::new(), &HashMap::new(), "Missing")
+                .is_none()
+        );
+
+        let mut imports = BTreeMap::new();
+        imports.insert(
+            "Missing".to_string(),
+            ImportEntry {
+                export_name: "Missing".to_string(),
+                ranges: Vec::new(),
+                source: "./missing".to_string(),
+            },
+        );
+        let analysis_with_import = FileAnalysis {
+            export_references: Vec::new(),
+            imports,
+            jsx_tags: Vec::new(),
+            local_components: BTreeMap::new(),
+            own_component_kind: Kind::Server,
+            type_identifiers: Vec::new(),
+        };
+        assert!(
+            check_imported_component(
+                &analysis_with_import,
+                &HashMap::new(),
+                &HashMap::new(),
+                "Missing"
+            )
+            .is_none()
+        );
+
+        let mut imports = BTreeMap::new();
+        imports.insert(
+            "Missing".to_string(),
+            ImportEntry {
+                export_name: "Missing".to_string(),
+                ranges: Vec::new(),
+                source: "./missing".to_string(),
+            },
+        );
+        let analysis = FileAnalysis {
+            export_references: Vec::new(),
+            imports,
+            jsx_tags: Vec::new(),
+            local_components: BTreeMap::new(),
+            own_component_kind: Kind::Server,
+            type_identifiers: Vec::new(),
+        };
+        let mut resolved_paths = HashMap::new();
+        let missing_path = PathBuf::from("/tmp/missing.tsx");
+        resolved_paths.insert("Missing".to_string(), missing_path.clone());
+        assert!(
+            check_imported_component(&analysis, &resolved_paths, &HashMap::new(), "Missing")
+                .is_none()
+        );
+
+        let mapper = Utf16Mapper::new("lower");
+        let mut ranges = Vec::new();
+        let mut locals = BTreeMap::new();
+        register_component(
+            "lower",
+            Span::new(0, 5),
+            Span::new(0, 5),
+            &mapper,
+            Kind::Server,
+            &mut ranges,
+            &mut locals,
+        );
+        assert!(ranges.is_empty());
+        assert!(locals.is_empty());
+    }
+
+    #[test]
+    fn direct_export_extraction_helpers_cover_remaining_declaration_shapes() {
+        let project = TempProject::new();
+        let file = project.write(
+            "helpers.tsx",
+            r"
+                function Fn(){ return null; }
+                class Cls { render(){ return null; } }
+                export function ExportedFn(){ return null; }
+                export class ExportedCls { render(){ return null; } }
+                export const ExportedVar = () => null, lower = () => null, MissingInit;
+                const NamedDefaultClass = class { render(){ return null; } };
+                export default class NamedDefault { render(){ return null; } }
+                export { lower as lower } from './other';
+                export default notMemo(() => null);
+            ",
+        );
+        let source = fs::read_to_string(&file).expect("read helpers");
+        let (names, _, _) = extract_file_component_exports(&file, &source);
+        assert!(names.contains("ExportedFn"));
+        assert!(names.contains("ExportedCls"));
+        assert!(names.contains("ExportedVar"));
+        assert!(names.contains("NamedDefault"));
+
+        let allocator = Allocator::default();
+        let parsed = Parser::new(
+            &allocator,
+            &source,
+            SourceType::from_path(&file).expect("tsx source type"),
+        )
+        .parse();
+        let mut local_names = BTreeSet::from([
+            "Fn".to_string(),
+            "Cls".to_string(),
+            "ExportedFn".to_string(),
+            "ExportedCls".to_string(),
+            "ExportedVar".to_string(),
+        ]);
+        let mut component_names = BTreeSet::new();
+
+        for statement in &parsed.program.body {
+            if let Statement::ExportNamedDeclaration(export_decl) = statement
+                && let Some(declaration) = &export_decl.declaration
+            {
+                add_exported_declaration_names(
+                    declaration,
+                    true,
+                    &local_names,
+                    &mut component_names,
+                );
+            }
+            if let Statement::FunctionDeclaration(function) = statement {
+                add_local_function_name(function, &mut local_names);
+            }
+            if let Statement::ClassDeclaration(class_decl) = statement {
+                add_local_class_name(class_decl, &mut local_names);
+            }
+        }
+
+        assert!(component_names.contains("ExportedFn"));
+        assert!(component_names.contains("ExportedCls"));
+        assert!(component_names.contains("ExportedVar"));
+        assert!(component_names.contains("default"));
+    }
+
+    #[test]
+    fn direct_anonymous_default_declarations_cover_default_fallbacks() {
+        let anon_allocator = Allocator::default();
+        let anon_source = "export default function(){ return null; } export default class { render(){ return null; } }";
+        let anon_parsed = Parser::new(
+            &anon_allocator,
+            anon_source,
+            SourceType::from_path(Path::new("anon.tsx")).expect("tsx source type"),
+        )
+        .parse();
+        let mut anon_component_names = BTreeSet::new();
+        for statement in &anon_parsed.program.body {
+            if let Statement::ExportDefaultDeclaration(export_decl) = statement {
+                match &export_decl.declaration {
+                    ExportDefaultDeclarationKind::FunctionDeclaration(function) => {
+                        let declaration =
+                            Declaration::FunctionDeclaration(function.clone_in(&anon_allocator));
+                        add_exported_declaration_names(
+                            &declaration,
+                            true,
+                            &BTreeSet::new(),
+                            &mut anon_component_names,
+                        );
+                    }
+                    ExportDefaultDeclarationKind::ClassDeclaration(class_decl) => {
+                        let declaration =
+                            Declaration::ClassDeclaration(class_decl.clone_in(&anon_allocator));
+                        add_exported_declaration_names(
+                            &declaration,
+                            true,
+                            &BTreeSet::new(),
+                            &mut anon_component_names,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(anon_component_names.contains("default"));
+    }
+
+    #[test]
+    fn direct_pattern_declarations_cover_skipped_export_bindings() {
+        let pattern_allocator = Allocator::default();
+        let pattern_source = "const [LocalSkip] = []; export const [ExportSkip] = []; export enum ExportedEnum { A }";
+        let pattern_parsed = Parser::new(
+            &pattern_allocator,
+            pattern_source,
+            SourceType::from_path(Path::new("pattern.tsx")).expect("tsx source type"),
+        )
+        .parse();
+        let mut local_component_names = BTreeSet::new();
+        let mut pattern_component_names = BTreeSet::new();
+        let mapper = Utf16Mapper::new(pattern_source);
+        let mut async_components = HashSet::new();
+        let mut component_ranges = Vec::new();
+        let mut local_components = BTreeMap::new();
+        let mut type_identifiers = Vec::new();
+        for statement in &pattern_parsed.program.body {
+            if let Statement::VariableDeclaration(variable_decl) = statement {
+                add_local_variable_names(variable_decl, &mut local_component_names);
+            }
+            if let Statement::ExportNamedDeclaration(export_decl) = statement
+                && let Some(declaration) = &export_decl.declaration
+            {
+                add_exported_declaration_names(
+                    declaration,
+                    false,
+                    &local_component_names,
+                    &mut pattern_component_names,
+                );
+                process_exported_declaration(
+                    declaration,
+                    &mapper,
+                    Kind::Server,
+                    &mut async_components,
+                    &mut component_ranges,
+                    &mut local_components,
+                    &mut type_identifiers,
+                );
+            }
+        }
+        assert!(local_component_names.is_empty());
+        assert!(pattern_component_names.is_empty());
+    }
+
+    #[test]
+    fn direct_default_class_expression_branch_registers_named_expression() {
+        let source = "const X = class NamedExpression { render(){ return null; } };";
+        let allocator = Allocator::default();
+        let parsed = Parser::new(
+            &allocator,
+            source,
+            SourceType::from_path(Path::new("class-expression.tsx")).expect("tsx source type"),
+        )
+        .parse();
+        let mapper = Utf16Mapper::new(source);
+        let mut async_components = HashSet::new();
+        let mut component_ranges = Vec::new();
+        let mut export_references = Vec::new();
+        let mut local_components = BTreeMap::new();
+
+        let Statement::VariableDeclaration(variable_decl) = &parsed.program.body[0] else {
+            panic!("expected variable declaration");
+        };
+        let Some(Expression::ClassExpression(class_expr)) = &variable_decl.declarations[0].init
+        else {
+            panic!("expected class expression");
+        };
+        let declaration =
+            ExportDefaultDeclarationKind::ClassExpression(class_expr.clone_in(&allocator));
+        process_export_default_declaration(
+            &declaration,
+            &mapper,
+            Kind::Server,
+            &mut async_components,
+            &mut component_ranges,
+            &mut export_references,
+            &mut local_components,
+        );
+
+        assert!(local_components.contains_key("NamedExpression"));
+    }
+
+    #[test]
+    fn direct_visitor_helper_covers_function_expression_tracking_guard() {
+        let source = "const inner = function named(){ return null; };";
+        let allocator = Allocator::default();
+        let parsed = Parser::new(
+            &allocator,
+            source,
+            SourceType::from_path(Path::new("expr.tsx")).expect("tsx source type"),
+        )
+        .parse();
+        let mapper = Utf16Mapper::new(source);
+
+        let Statement::VariableDeclaration(variable_decl) = &parsed.program.body[0] else {
+            panic!("expected variable declaration");
+        };
+        let Some(Expression::FunctionExpression(function)) = &variable_decl.declarations[0].init
+        else {
+            panic!("expected function expression");
+        };
+
+        let mut funcs = BTreeMap::new();
+        funcs.insert("Component".to_string(), BTreeMap::new());
+        let mut refs = BTreeMap::new();
+        refs.insert("Component".to_string(), Vec::new());
+        let mut type_identifiers = Vec::new();
+        let mut collector = SourceElementCollector {
+            component_by_span: HashMap::new(),
+            components_with_inline_fn: Some(HashSet::new()),
+            current_component: Some("Component".to_string()),
+            current_component_tracked: true,
+            jsx_tags: Vec::new(),
+            mapper: &mapper,
+            per_component_funcs: Some(funcs),
+            per_component_refs: Some(refs),
+            source_text: source,
+            type_identifiers: &mut type_identifiers,
+            type_literal_depth: 0,
+        };
+
+        collector.track_function_declaration(function);
+        assert!(collector.per_component_funcs.expect("func map")["Component"].is_empty());
+    }
 }
