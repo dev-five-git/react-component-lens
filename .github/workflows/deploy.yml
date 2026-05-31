@@ -25,14 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy
-          targets: wasm32-wasip1
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: test-${{ matrix.os }}
+          target: wasm32-wasip1
+          cache-key: test-${{ matrix.os }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -179,13 +176,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          targets: ${{ matrix.target }}
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: lsp-binaries-${{ matrix.target }}
+          target: ${{ matrix.target }}
+          cache-key: lsp-binaries-${{ matrix.target }}
 
       - name: Install cross
         if: ${{ matrix.cross }}
