@@ -1,0 +1,72 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Star",
+      "sourceFilePath": "Star.mts",
+      "ranges": [
+        {
+          "start": 9,
+          "end": 13
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Helper",
+      "sourceFilePath": "Helper.cts",
+      "ranges": [
+        {
+          "start": 43,
+          "end": 49
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Page",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 97,
+          "end": 101
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "Star",
+      "sourceFilePath": "Star.mts",
+      "ranges": [
+        {
+          "start": 117,
+          "end": 122
+        },
+        {
+          "start": 123,
+          "end": 125
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Helper",
+      "sourceFilePath": "Helper.cts",
+      "ranges": [
+        {
+          "start": 125,
+          "end": 132
+        },
+        {
+          "start": 133,
+          "end": 135
+        }
+      ]
+    }
+  ]
+}

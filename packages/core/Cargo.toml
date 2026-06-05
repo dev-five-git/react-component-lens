@@ -1,0 +1,27 @@
+[package]
+name = "rcl-core"
+version = "0.3.0"
+description = "Rust reimplementation of the React Component Lens analyzer (oxc-based), byte-conformant to the TypeScript oracle."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "rcl_core"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+oxc_allocator = "0.134"
+oxc_ast = "0.134"
+oxc_ast_visit = "0.134"
+oxc_parser = "0.134"
+oxc_span = "0.134"
+oxc_resolver = { version = "11.21", default-features = false }
+serde_json = "1"
+
+[dev-dependencies]
+rstest = "0.26.1"

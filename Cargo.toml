@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["packages/core-rs", "packages/lsp-rs", "packages/zed"]
+members = ["packages/core", "packages/core-wasm", "packages/lsp", "packages/zed"]
 
 [workspace.package]
 edition = "2024"

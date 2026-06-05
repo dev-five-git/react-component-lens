@@ -1,18 +1,9 @@
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-
-import {
-  ComponentLensAnalyzer,
-  createDiskSignature,
-  createOpenSignature,
-  ImportResolver,
-  type ScopeConfig,
-  type SourceHost,
-} from '@react-component-lens/core'
 import * as vscode from 'vscode'
 
+import { ComponentLensAnalyzer, type ScopeConfig } from './analyzerWasm'
 import { type CodeLensConfig, ComponentCodeLensProvider } from './codelens'
 import { type HighlightColors, LensDecorations } from './decorations'
+import { WorkspaceHost } from './wasmHost'
 
 const LANG_JSX = 'javascriptreact'
 const LANG_TSX = 'typescriptreact'
@@ -23,16 +14,32 @@ const DEFAULT_HIGHLIGHT_COLORS: HighlightColors = {
   serverComponent: '#f59e0b',
 }
 
+interface DecorationSnapshot {
+  kind: 'client' | 'server'
+  ranges: { start: number; end: number }[]
+}
+
+interface RclTestGlobal {
+  __rclGetDecorationsForTest?: (uri: string) => DecorationSnapshot[] | undefined
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   let config = getConfiguration()
-  const sourceHost = new WorkspaceSourceHost()
-  const resolver = new ImportResolver(sourceHost)
-  const analyzer = new ComponentLensAnalyzer(sourceHost, resolver)
+  const host = new WorkspaceHost()
+  const analyzer = new ComponentLensAnalyzer(host)
   const decorations = new LensDecorations(config.highlightColors)
   const codeLensProvider = new ComponentCodeLensProvider(
     analyzer,
     config.codeLens,
   )
+
+  const decorationSnapshots = new Map<string, DecorationSnapshot[]>()
+
+  if (process.env.RCL_TEST === '1') {
+    ;(globalThis as RclTestGlobal).__rclGetDecorationsForTest = (
+      uri: string,
+    ): DecorationSnapshot[] | undefined => decorationSnapshots.get(uri)
+  }
 
   context.subscriptions.push(decorations, codeLensProvider)
 
@@ -52,7 +59,7 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   const refreshVisibleEditors = async (): Promise<void> => {
-    sourceHost.invalidateDocumentCache()
+    host.invalidateDocumentCache()
     await Promise.all(
       vscode.window.visibleTextEditors.map((editor) => refreshEditor(editor)),
     )
@@ -72,12 +79,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const refreshEditor = async (editor: vscode.TextEditor): Promise<void> => {
     const document = editor.document
+    const uriKey = document.uri.toString()
     if (!config.enabled || !isSupportedDocument(document)) {
       decorations.clear(editor)
+      decorationSnapshots.delete(uriKey)
       return
     }
 
-    const signature = createOpenSignature(document.version)
+    const signature = 'open:' + document.version
     const usages = await analyzer.analyzeDocument(
       document.fileName,
       document.getText(),
@@ -85,6 +94,10 @@ export function activate(context: vscode.ExtensionContext): void {
       config.scope,
     )
     decorations.apply(editor, usages)
+    decorationSnapshots.set(
+      uriKey,
+      usages.map((usage) => ({ kind: usage.kind, ranges: usage.ranges })),
+    )
   }
 
   const createWatcher = (
@@ -247,93 +260,6 @@ function isSupportedDocument(document: vscode.TextDocument): boolean {
     document.uri.scheme === 'file' &&
     (document.languageId === LANG_TSX || document.languageId === LANG_JSX)
   )
-}
-
-class WorkspaceSourceHost implements SourceHost {
-  public fileExists(filePath: string): boolean {
-    return (
-      this.getOpenDocument(filePath) !== undefined || fs.existsSync(filePath)
-    )
-  }
-
-  public getSignature(filePath: string): string | undefined {
-    const openDocument = this.getOpenDocument(filePath)
-    if (openDocument) {
-      return createOpenSignature(openDocument.version)
-    }
-
-    try {
-      const stats = fs.statSync(filePath)
-      return createDiskSignature(stats.mtimeMs, stats.size)
-    } catch {
-      return undefined
-    }
-  }
-
-  public readFile(filePath: string): string | undefined {
-    const openDocument = this.getOpenDocument(filePath)
-    if (openDocument) {
-      return openDocument.getText()
-    }
-
-    try {
-      return fs.readFileSync(filePath, 'utf8')
-    } catch {
-      return undefined
-    }
-  }
-
-  public async readFileAsync(filePath: string): Promise<string | undefined> {
-    const openDocument = this.getOpenDocument(filePath)
-    if (openDocument) {
-      return openDocument.getText()
-    }
-
-    try {
-      return await fs.promises.readFile(filePath, 'utf8')
-    } catch {
-      return undefined
-    }
-  }
-
-  public async getSignatureAsync(
-    filePath: string,
-  ): Promise<string | undefined> {
-    const openDocument = this.getOpenDocument(filePath)
-    if (openDocument) {
-      return createOpenSignature(openDocument.version)
-    }
-
-    try {
-      const stats = await fs.promises.stat(filePath)
-      return createDiskSignature(stats.mtimeMs, stats.size)
-    } catch {
-      return undefined
-    }
-  }
-
-  public invalidateDocumentCache(): void {
-    this.documentCache = undefined
-  }
-
-  private documentCache: Map<string, vscode.TextDocument> | undefined
-  private lastFilePath = ''
-  private lastNormalizedPath = ''
-
-  private getOpenDocument(filePath: string): vscode.TextDocument | undefined {
-    if (!this.documentCache) {
-      this.documentCache = new Map()
-      for (const document of vscode.workspace.textDocuments) {
-        this.documentCache.set(path.normalize(document.fileName), document)
-      }
-    }
-
-    if (filePath !== this.lastFilePath) {
-      this.lastFilePath = filePath
-      this.lastNormalizedPath = path.normalize(filePath)
-    }
-    return this.documentCache.get(this.lastNormalizedPath)
-  }
 }
 
 function normalizeColor(

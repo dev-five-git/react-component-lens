@@ -7,3 +7,5 @@ tsconfig.json
 bunfig.toml
 coverage/**
 node_modules/**
+!out/core_wasm.js
+!out/core_wasm_bg.wasm

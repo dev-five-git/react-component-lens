@@ -117,22 +117,23 @@
     }
   },
   "scripts": {
-    "build": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked",
-    "build:production": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --minify",
-    "watch": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked --watch",
+    "build": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external ./core_wasm.js --sourcemap=linked && bun run copy:wasm",
+    "build:production": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external ./core_wasm.js --minify && bun run copy:wasm",
+    "watch": "bun run copy:wasm && bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external ./core_wasm.js --sourcemap=linked --watch",
+    "copy:wasm": "node -e \"const fs=require('fs');const path=require('path');let src;try{src=path.dirname(require.resolve('@react-component-lens/core-wasm/pkg/core_wasm.js'));}catch(e){src=path.join(path.dirname(require.resolve('@react-component-lens/core-wasm/package.json')),'pkg');}fs.mkdirSync('out',{recursive:true});for(const f of ['core_wasm.js','core_wasm_bg.wasm'])fs.copyFileSync(path.join(src,f),path.join('out',f));try{fs.copyFileSync(path.join(src,'core_wasm.d.ts'),path.join('out','core_wasm.d.ts'));}catch(e){}\"",
     "typecheck": "tsc -p ./tsconfig.json",
     "lint": "oxlint .",
     "lint:fix": "oxlint . --fix",
     "test": "bun test",
+    "test:integration": "bun test --preload ./test/wasmSetup.ts ./test/integration.node.test.ts",
     "package": "vsce package --no-dependencies",
     "vscode:prepublish": "bun run build:production"
   },
   "dependencies": {
-    "@react-component-lens/core": "workspace:*",
-    "typescript": "5.9.3"
+    "@react-component-lens/core-wasm": "workspace:*"
   },
   "devDependencies": {
     "@types/vscode": "1.14.0",
-    "@vscode/vsce": "3.9.1"
+    "@vscode/vsce": "3.9.2"
   }
 }

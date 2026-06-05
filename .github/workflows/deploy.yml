@@ -51,7 +51,7 @@ jobs:
       # Coverage gate runs on Linux only to keep one toolchain install per OS.
       - name: Install cargo-tarpaulin
         if: matrix.os == 'ubuntu-latest'
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.81.5
         with:
           tool: cargo-tarpaulin
 
@@ -199,9 +199,9 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross build --release --target ${{ matrix.target }} -p lsp-rs --bin rcl-lsp
+            cross build --release --target ${{ matrix.target }} -p rcl-lsp --bin rcl-lsp
           else
-            cargo build --release --target ${{ matrix.target }} -p lsp-rs --bin rcl-lsp
+            cargo build --release --target ${{ matrix.target }} -p rcl-lsp --bin rcl-lsp
           fi
 
       - name: Package archive

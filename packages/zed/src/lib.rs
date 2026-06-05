@@ -4,7 +4,7 @@
 //! The WASM module performs **no analysis**. It only downloads the
 //! prebuilt `rcl-lsp` binary from a GitHub Release of
 //! `dev-five-git/react-component-lens` and hands Zed a `Command` that
-//! launches it. All semantic-token logic lives in `packages/lsp-rs`.
+//! launches it. All semantic-token logic lives in `packages/lsp`.
 //!
 //! Download pattern: gleam-lang/zed-gleam src/gleam.rs @ d1ddea8.
 
@@ -25,16 +25,16 @@ impl ReactComponentLensExtension {
         language_server_id: &zed::LanguageServerId,
         worktree: &zed::Worktree,
     ) -> Result<String> {
-        if let Some(path) = &self.cached_binary_path {
-            if fs::metadata(path).is_ok_and(|m| m.is_file()) {
-                return Ok(path.clone());
-            }
+        if let Some(path) = &self.cached_binary_path
+            && fs::metadata(path).is_ok_and(|m| m.is_file())
+        {
+            return Ok(path.clone());
         }
 
         // Prefer a `rcl-lsp` binary already on PATH. This lets power users pin
         // their own build and, crucially, makes the extension usable as a Zed
         // dev extension without a published GitHub Release (just
-        // `cargo build -p lsp-rs --bin rcl-lsp` and put it on PATH).
+        // `cargo build -p rcl-lsp --bin rcl-lsp` and put it on PATH).
         if let Some(path) = worktree.which(BINARY_NAME) {
             self.cached_binary_path = Some(path.clone());
             return Ok(path);

@@ -3,7 +3,7 @@
 **contractVersion:** 1
 **Status:** Frozen. Changes require a reviewed PR that bumps `contractVersion` and regenerates all goldens.
 
-This document defines the **canonical, normalized output** that the TypeScript oracle (`packages/core`) and the Rust engine (`packages/core-rs`) MUST produce **identically** for the same input. Parity is asserted by byte-equality of the serialized canonical JSON (analyzer) and of the resolution trace (resolver).
+This document defines the **canonical, normalized output** that the TypeScript oracle (legacy `packages/core`) and the Rust engine (`packages/core`) MUST produce **identically** for the same input. Parity is asserted by byte-equality of the serialized canonical JSON (analyzer) and of the resolution trace (resolver).
 
 ---
 
@@ -125,6 +125,6 @@ The resolver is conformed separately. For each `(fromFilePath, specifier)` the e
 ---
 
 ## 7. What this contract does NOT cover
-- LSP position encoding (byte/UTF-16 → `{line, character}`) — a separate layer (`packages/lsp-rs`) with its own tests.
+- LSP position encoding (byte/UTF-16 → `{line, character}`) — a separate layer (`packages/lsp`) with its own tests.
 - Caching/signature behavior — disabled or trace-asserted during conformance/fuzzing to avoid nondeterminism.
 - Performance — measured separately after correctness is proven.

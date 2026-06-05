@@ -12,12 +12,17 @@ In Next.js App Router and React Server Components, the boundary between server a
 
 React Component Lens solves this by coloring component tags based on whether the imported file contains `"use client"`.
 
+## Architecture
+
+The extension uses the shared Rust analysis core from the React Component Lens workspace. [`packages/core`](../core) is the single implementation; [`packages/core-wasm`](../core-wasm) builds it with `wasm-pack --target nodejs` so VS Code can load the same analyzer as WebAssembly. Zed consumes the same core natively through the `rcl-lsp` binary.
+
 ## How It Works
 
-1. Parses the active `.tsx` / `.jsx` file for JSX tags
-2. Resolves each import to its source file (supports relative paths, `tsconfig` path aliases, and barrel re-exports)
-3. Detects `"use client"` at the top of the resolved file
-4. Colors the tag shell (`<Component`, `>`, `/>`, `</Component>`) — props are left untouched
+1. Loads the bundled Rust WASM core (`core_wasm.js` and `core_wasm_bg.wasm`)
+2. Parses the active `.tsx` / `.jsx` file for JSX tags
+3. Resolves each import to its source file (supports relative paths, `tsconfig` path aliases, and barrel re-exports)
+4. Detects `"use client"` at the top of the resolved file
+5. Colors the tag shell (`<Component`, `>`, `/>`, `</Component>`) — props are left untouched
 
 Components without `"use client"` are treated as Server Components.
 

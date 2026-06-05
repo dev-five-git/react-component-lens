@@ -16,18 +16,18 @@
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run lint:js && bun run lint:rust",
     "lint:js": "oxlint .",
-    "lint:rust": "bun run lint:rust:fmt && bun run lint:rust:clippy && bun run lint:rust:clippy:wasm",
+    "lint:rust": "bun run lint:rust:fmt && bun run lint:rust:clippy && bun run lint:rust:clippy:wasm && bun run lint:rust:clippy:wasm-core",
     "lint:rust:fmt": "cargo fmt --all -- --check",
-    "lint:rust:clippy": "cargo clippy --workspace --exclude zed-react-component-lens --all-targets -- -D warnings",
-    "lint:rust:clippy:wasm": "cargo clippy --target wasm32-wasip1 --release -p zed-react-component-lens -- -D warnings",
+    "lint:rust:clippy": "cargo clippy --workspace --exclude rcl-zed --exclude rcl-core-wasm --all-targets -- -D warnings",
+    "lint:rust:clippy:wasm": "cargo clippy --target wasm32-wasip1 --release -p rcl-zed -- -D warnings",
+    "lint:rust:clippy:wasm-core": "cargo clippy --target wasm32-unknown-unknown --release -p rcl-core-wasm -- -D warnings",
     "lint:fix": "oxlint . --fix && cargo fmt --all",
-    "test": "bun run test:rust && bun run test:js && bun run test:wasm && bun run test:fuzz",
-    "test:rust": "cargo test --workspace --exclude zed-react-component-lens",
-    "test:js": "bun test",
-    "test:wasm": "cargo build --target wasm32-wasip1 --release -p zed-react-component-lens",
-    "test:fuzz": "bun run test:fuzz:build && bun run --filter @react-component-lens/conformance-harness fuzz:ci",
-    "test:fuzz:build": "cargo build --release -p core-rs --bin emit-canonical",
-    "test:coverage": "cargo tarpaulin --engine llvm --workspace --exclude zed-react-component-lens --exclude-files \"**/main.rs\" --exclude-files \"**/src/bin/**\" --exclude-files \"**/tests/**\" --out Stdout --fail-under 100",
+    "test": "bun run test:rust && bun run test:wasm-core && bun run test:wasm && bun run build && bun run test:integration",
+    "test:rust": "cargo test --workspace --exclude rcl-zed --exclude rcl-core-wasm",
+    "test:wasm-core": "wasm-pack test --node packages/core-wasm",
+    "test:integration": "bun run --filter react-component-lens test:integration",
+    "test:wasm": "cargo build --target wasm32-wasip1 --release -p rcl-zed",
+    "test:coverage": "cargo tarpaulin --engine llvm --workspace --exclude rcl-zed --exclude rcl-core-wasm --exclude-files \"**/main.rs\" --exclude-files \"**/src/bin/**\" --exclude-files \"**/tests/**\" --exclude-files \"packages/core-wasm/**\" --out Stdout --fail-under 100",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -37,6 +37,6 @@
     "eslint-plugin-devup": "^2.0.19",
     "globals": "17.6.0",
     "husky": "^9.1.7",
-    "oxlint": "^1.67"
+    "oxlint": "^1.68"
   }
 }

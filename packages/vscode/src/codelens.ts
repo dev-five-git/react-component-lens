@@ -1,10 +1,11 @@
+import * as vscode from 'vscode'
+
 import {
   type ComponentLensAnalyzer,
   type ComponentUsage,
-  createOpenSignature,
   type ScopeConfig,
-} from '@react-component-lens/core'
-import * as vscode from 'vscode'
+} from './analyzerWasm'
+import { createOpenSignature } from './wasmHost'
 
 export interface CodeLensConfig {
   clientComponent: boolean

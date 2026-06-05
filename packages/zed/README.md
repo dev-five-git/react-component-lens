@@ -9,7 +9,7 @@ Mirrors the [VS Code extension](https://marketplace.visualstudio.com/items?itemN
 
 ## How it works
 
-The extension ships a Rust LSP server (`rcl-lsp`, built from `packages/lsp-rs`) that emits two custom semantic token types:
+The extension ships a Rust LSP server (`rcl-lsp`, built from `packages/lsp`) that emits two custom semantic token types:
 
 - `rscClientComponent`
 - `rscServerComponent`
@@ -56,11 +56,11 @@ downloading a release:
 
 ```bash
 # 1. Build the language server and put it on PATH
-cargo build --release -p lsp-rs --bin rcl-lsp
+cargo build --release -p rcl-lsp --bin rcl-lsp
 #   e.g. add target/release to PATH, or copy rcl-lsp(.exe) into a PATH dir
 
 # 2. Build the Zed extension (WASM)
-cargo build --target wasm32-wasip1 --release -p zed-react-component-lens
+cargo build --target wasm32-wasip1 --release -p rcl-zed
 ```
 
 Then in Zed: `cmd+shift+p` → "zed: install dev extension" → choose `packages/zed/`.
