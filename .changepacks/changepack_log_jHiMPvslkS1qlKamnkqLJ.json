@@ -1,1 +1,0 @@
-{"changes":{"packages/lsp/Cargo.toml":"Major","packages/core/Cargo.toml":"Major","package.json":"Major","packages/vscode/package.json":"Major","Cargo.toml":"Major","packages/core-wasm/Cargo.toml":"Major","packages/zed/Cargo.toml":"Major","packages/core-wasm/package.json":"Major"},"note":"Convert rust","date":"2026-06-06T11:29:50.983998300Z"}

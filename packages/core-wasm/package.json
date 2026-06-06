@@ -11,5 +11,6 @@
     "build": "wasm-pack build --target nodejs --release --out-dir pkg --out-name core_wasm",
     "build:production": "wasm-pack build --target nodejs --release --out-dir pkg --out-name core_wasm",
     "clean": "rm -rf pkg"
-  }
+  },
+  "version": "1.0.0"
 }
