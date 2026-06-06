@@ -28,8 +28,16 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: rustfmt, clippy, llvm-tools-preview
-          target: wasm32-wasip1
+          # wasm32-wasip1: rcl-zed clippy. wasm32-unknown-unknown: rcl-core-wasm
+          # clippy + wasm-pack build/test (`bun run test` runs both).
+          target: wasm32-wasip1, wasm32-unknown-unknown
           cache-key: test-${{ matrix.os }}
+
+      # `bun run test` runs `wasm-pack test --node` (core-wasm wasm-bindgen
+      # tests) and `bun run build` (wasm-pack build), so wasm-pack must exist.
+      - uses: taiki-e/install-action@v2.81.5
+        with:
+          tool: wasm-pack
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -38,14 +46,16 @@ jobs:
       - run: bun install --frozen-lockfile
 
       # `bun run lint` = oxlint + cargo fmt --check + cargo clippy (native)
-      # + cargo clippy (wasm32-wasip1 zed crate).
+      # + cargo clippy (wasm32-wasip1 rcl-zed) + cargo clippy
+      # (wasm32-unknown-unknown rcl-core-wasm).
       - run: bun run lint
 
       - run: bun run typecheck
 
-      # `bun run test` = cargo test (workspace, excluding zed wasm crate)
-      # + bun test (JS/TS) + cargo build wasm + cargo build emit-canonical
-      # + Rust-vs-TS differential fuzz (1000 seeds, zero-diff required).
+      # `bun run test` = cargo test (workspace, excluding the wasm crates)
+      # + wasm-pack test --node (rcl-core-wasm wasm-bindgen tests)
+      # + cargo build wasm32-wasip1 (rcl-zed) + bun run build
+      # + VS Code integration tests (packages/vscode test:integration).
       - run: bun run test
 
       # Coverage gate runs on Linux only to keep one toolchain install per OS.
