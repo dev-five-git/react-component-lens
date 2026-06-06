@@ -1,5 +1,5 @@
 {
-  "ignore": [],
+  "ignore": ["/Cargo.toml", "/package.json"],
   "baseBranch": "main",
   "latestPackage": null,
   "publish": {},
