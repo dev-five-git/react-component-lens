@@ -1,6 +1,6 @@
 [package]
 name = "rcl-core"
-version = "0.3.0"
+version = "1.0.0"
 description = "Rust reimplementation of the React Component Lens analyzer (oxc-based), byte-conformant to the TypeScript oracle."
 edition.workspace = true
 rust-version.workspace = true
