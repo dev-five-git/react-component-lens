@@ -58,6 +58,13 @@ jobs:
       # + VS Code integration tests (packages/vscode test:integration).
       - run: bun run test
 
+      # TypeScript 100% coverage gate: `bun test` from the repo root applies the
+      # root bunfig (preload + coveragePathIgnorePatterns + coverageThreshold
+      # = 100% lines/functions/statements) over the 5 VS Code extension source
+      # files. Runs on every matrix OS so both `process.platform` branches stay
+      # covered. Relies on `bun run test` above having produced out/core_wasm.js.
+      - run: bun test
+
       # Coverage gate runs on Linux only to keep one toolchain install per OS.
       - name: Install cargo-tarpaulin
         if: matrix.os == 'ubuntu-latest'
