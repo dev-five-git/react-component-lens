@@ -34,6 +34,7 @@ struct Backend {
     documents: Arc<DashMap<Url, String>>,
 }
 
+#[cfg(not(tarpaulin_include))]
 #[tower_lsp::async_trait]
 impl LanguageServer for Backend {
     async fn initialize(&self, _params: InitializeParams) -> Result<InitializeResult> {
@@ -115,6 +116,7 @@ impl LanguageServer for Backend {
     }
 }
 
+#[cfg(not(tarpaulin_include))]
 impl Backend {
     async fn refresh_semantic_tokens(&self) {
         let _ = self.client.semantic_tokens_refresh().await;
@@ -269,6 +271,7 @@ fn delta_encode(tuples: Vec<(u32, u32, u32, u32)>) -> Vec<SemanticToken> {
         .collect()
 }
 
+#[cfg(not(tarpaulin_include))]
 #[tokio::main]
 async fn main() {
     let stdin = tokio::io::stdin();
@@ -297,9 +300,12 @@ mod tests {
     use rcl_core::Kind;
     use tower_lsp::lsp_types::Url;
 
+    use rcl_core::{Range, utf16::Utf16LineIndex};
+
     use crate::{
-        OpenDocumentsSourceHost, latest_change_text, semantic_token_tuples_for_source,
-        semantic_token_tuples_for_source_with_host,
+        OpenDocumentsSourceHost, latest_change_text, normalize_path_key, path_from_uri,
+        semantic_token_tuples_for_source, semantic_token_tuples_for_source_with_host,
+        semantic_tokens_for_source_with_host, semantic_tokens_legend, token_from_range,
     };
 
     static NEXT_PROJECT_ID: AtomicUsize = AtomicUsize::new(0);
@@ -469,5 +475,174 @@ mod tests {
         let changes = vec![];
         let result = latest_change_text(changes);
         assert_eq!(result, None);
+    }
+
+    #[test]
+    fn semantic_tokens_legend_lists_two_token_types_and_no_modifiers() {
+        let legend = semantic_tokens_legend();
+
+        assert_eq!(legend.token_types.len(), 2);
+        assert_eq!(legend.token_types[0].as_str(), "rscClientComponent");
+        assert_eq!(legend.token_types[1].as_str(), "rscServerComponent");
+        assert!(legend.token_modifiers.is_empty());
+    }
+
+    #[test]
+    fn path_from_uri_returns_disk_path_for_file_url() {
+        let project = TempProject::new();
+        let entry = project.write("page.tsx", "export const Page = () => null;\n");
+        let url = file_url(&entry);
+
+        let result = path_from_uri(&url);
+
+        assert_eq!(result, entry);
+    }
+
+    #[test]
+    fn path_from_uri_returns_document_tsx_for_non_file_url_with_empty_path() {
+        let url = Url::parse("untitled:").expect("parse empty untitled URL");
+        assert!(url.to_file_path().is_err());
+        assert!(url.path().is_empty());
+
+        let result = path_from_uri(&url);
+
+        assert_eq!(result, PathBuf::from("document.tsx"));
+    }
+
+    #[test]
+    fn path_from_uri_returns_document_tsx_for_non_file_url_without_extension() {
+        let url = Url::parse("untitled:Untitled-1").expect("parse untitled URL");
+        assert!(url.to_file_path().is_err());
+        assert_eq!(Path::new(url.path()).extension(), None);
+
+        let result = path_from_uri(&url);
+
+        assert_eq!(result, PathBuf::from("document.tsx"));
+    }
+
+    #[test]
+    fn path_from_uri_returns_path_for_non_file_url_with_extension() {
+        let url = Url::parse("inmemory:/x/page.tsx").expect("parse inmemory URL");
+        assert!(url.to_file_path().is_err());
+
+        let result = path_from_uri(&url);
+
+        assert_eq!(result, PathBuf::from("/x/page.tsx"));
+    }
+
+    #[test]
+    fn normalize_path_key_replaces_backslashes_and_respects_platform_case() {
+        let raw = Path::new("C:\\Users\\Mixed\\Case\\File.TSX");
+
+        let result = normalize_path_key(raw);
+
+        if cfg!(windows) {
+            assert_eq!(result, "c:/users/mixed/case/file.tsx");
+        } else {
+            assert_eq!(result, "C:/Users/Mixed/Case/File.TSX");
+        }
+    }
+
+    struct FsHost;
+
+    impl rcl_core::analyzer::SourceHost for FsHost {
+        fn read_to_string(&self, file_path: &Path) -> Option<String> {
+            fs::read_to_string(file_path).ok()
+        }
+    }
+
+    #[test]
+    fn semantic_tokens_for_source_with_host_delta_encodes_same_and_different_lines() {
+        let source =
+            include_str!("../../../conformance/fixtures/directive/single-quote-client/entry.tsx");
+        let path = fixture_path("directive/single-quote-client/entry.tsx");
+
+        let tokens = semantic_tokens_for_source_with_host(Path::new(&path), source, &FsHost);
+
+        // Tuples (from existing test): [(2, 16, 6, 0), (3, 9, 7, 0), (3, 17, 2, 0)]
+        // Delta-encoded:
+        //   token 0: line 2 - 0 = 2, char 16 (new line), len 6, type 0
+        //   token 1: line 3 - 2 = 1, char 9 (new line), len 7, type 0
+        //   token 2: line 3 - 3 = 0, char 17 - 9 = 8, len 2, type 0
+        assert_eq!(tokens.len(), 3);
+        assert_eq!(tokens[0].delta_line, 2);
+        assert_eq!(tokens[0].delta_start, 16);
+        assert_eq!(tokens[0].length, 6);
+        assert_eq!(tokens[0].token_type, 0);
+        assert_eq!(tokens[0].token_modifiers_bitset, 0);
+
+        assert_eq!(tokens[1].delta_line, 1);
+        assert_eq!(tokens[1].delta_start, 9);
+        assert_eq!(tokens[1].length, 7);
+        assert_eq!(tokens[1].token_type, 0);
+
+        assert_eq!(tokens[2].delta_line, 0);
+        assert_eq!(tokens[2].delta_start, 8);
+        assert_eq!(tokens[2].length, 2);
+        assert_eq!(tokens[2].token_type, 0);
+    }
+
+    #[test]
+    fn token_from_range_returns_some_for_same_line_range() {
+        let index = Utf16LineIndex::new("abc\ndefghi");
+
+        let token = token_from_range(&index, Range { start: 4, end: 9 });
+
+        assert_eq!(token, Some((1, 0, 5)));
+    }
+
+    #[test]
+    fn token_from_range_returns_none_for_multi_line_range() {
+        let index = Utf16LineIndex::new("abc\ndefghi");
+
+        let token = token_from_range(&index, Range { start: 1, end: 6 });
+
+        assert_eq!(token, None);
+    }
+
+    #[test]
+    fn semantic_token_tuples_for_source_reads_imported_module_from_disk() {
+        let project = TempProject::new();
+        let entry_path = project.write(
+            "entry.tsx",
+            "import { Star } from './Star';\nfunction Page(){ return <Star />; }\n",
+        );
+        project.write(
+            "Star.tsx",
+            "'use client'; export function Star(){ return <Star/>; }",
+        );
+        let entry_source = fs::read_to_string(&entry_path).expect("read entry");
+
+        let tuples = semantic_token_tuples_for_source(&entry_path, &entry_source);
+
+        // The imported Star is a client component, so its JSX usage in entry.tsx is colored as client (token_type 0).
+        assert!(!tuples.is_empty());
+        let star_jsx = tuples
+            .iter()
+            .find(|(line, character, _, _)| *line == 1 && *character >= 20);
+        assert!(
+            star_jsx.is_some(),
+            "expected a Star JSX token in entry.tsx: {tuples:?}"
+        );
+        assert_eq!(
+            star_jsx.unwrap().3,
+            0,
+            "Star JSX should be colored client (0)"
+        );
+    }
+
+    #[test]
+    fn open_documents_host_falls_back_to_filesystem_when_not_in_map() {
+        use rcl_core::analyzer::SourceHost;
+
+        let project = TempProject::new();
+        let on_disk = project.write("only-on-disk.tsx", "export const X = 1;\n");
+
+        let documents = Arc::new(DashMap::new());
+        let host = OpenDocumentsSourceHost::new(Arc::clone(&documents));
+
+        let result = host.read_to_string(&on_disk);
+
+        assert_eq!(result.as_deref(), Some("export const X = 1;\n"));
     }
 }

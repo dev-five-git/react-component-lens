@@ -27,7 +27,7 @@
     "test:wasm-core": "wasm-pack test --node packages/core-wasm",
     "test:integration": "bun run --filter react-component-lens test:integration",
     "test:wasm": "cargo build --target wasm32-wasip1 --release -p rcl-zed",
-    "test:coverage": "cargo tarpaulin --engine llvm --workspace --exclude rcl-zed --exclude rcl-core-wasm --exclude-files \"**/main.rs\" --exclude-files \"**/src/bin/**\" --exclude-files \"**/tests/**\" --exclude-files \"packages/core-wasm/**\" --out Stdout --fail-under 100",
+    "test:coverage": "cargo tarpaulin --engine llvm --workspace --exclude rcl-zed --exclude rcl-core-wasm --exclude-files \"**/src/bin/**\" --exclude-files \"**/tests/**\" --exclude-files \"packages/core-wasm/**\" --out Stdout --fail-under 100",
     "prepare": "husky"
   },
   "devDependencies": {

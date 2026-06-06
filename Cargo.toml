@@ -10,6 +10,7 @@ repository = "https://github.com/dev-five-git/react-component-lens"
 
 [workspace.lints.rust]
 unsafe_code = "warn"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 
 [workspace.lints.clippy]
 all = "warn"
