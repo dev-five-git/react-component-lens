@@ -522,12 +522,20 @@ mod tests {
 
     #[test]
     fn path_from_uri_returns_path_for_non_file_url_with_extension() {
-        let url = Url::parse("inmemory:/x/page.tsx").expect("parse inmemory URL");
+        // `untitled:` is an opaque (cannot-be-a-base) scheme, so `to_file_path`
+        // returns Err on every platform. (A rooted path like `inmemory:/x/p.tsx`
+        // is platform-dependent: url's `to_file_path` accepts `/x/p.tsx` as a
+        // POSIX absolute path on Linux, returning Ok, but rejects it on Windows.)
+        let url = Url::parse("untitled:Untitled-1.tsx").expect("parse untitled URL");
         assert!(url.to_file_path().is_err());
+        assert_eq!(
+            Path::new(url.path()).extension().and_then(|e| e.to_str()),
+            Some("tsx")
+        );
 
         let result = path_from_uri(&url);
 
-        assert_eq!(result, PathBuf::from("/x/page.tsx"));
+        assert_eq!(result, PathBuf::from("Untitled-1.tsx"));
     }
 
     #[test]
