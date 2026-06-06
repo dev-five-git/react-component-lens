@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "UI",
+      "sourceFilePath": "ui.tsx",
+      "ranges": [
+        {
+          "start": 12,
+          "end": 14
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Screen",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 44,
+          "end": 50
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "UI.Panel",
+      "sourceFilePath": "ui.tsx",
+      "ranges": [
+        {
+          "start": 64,
+          "end": 73
+        },
+        {
+          "start": 74,
+          "end": 76
+        }
+      ]
+    }
+  ]
+}

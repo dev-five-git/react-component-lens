@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Fancy",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 49,
+          "end": 54
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Host",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 124,
+          "end": 128
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Fancy",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 142,
+          "end": 148
+        },
+        {
+          "start": 149,
+          "end": 151
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Commented",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 74,
+          "end": 83
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "Commented",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 97,
+          "end": 107
+        },
+        {
+          "start": 108,
+          "end": 110
+        }
+      ]
+    }
+  ]
+}

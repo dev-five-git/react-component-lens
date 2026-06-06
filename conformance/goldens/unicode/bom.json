@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Bommed",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 31,
+          "end": 37
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "Bommed",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 51,
+          "end": 58
+        },
+        {
+          "start": 59,
+          "end": 61
+        }
+      ]
+    }
+  ]
+}

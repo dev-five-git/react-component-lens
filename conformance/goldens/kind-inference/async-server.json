@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "AsyncList",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 22,
+          "end": 31
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Caller",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 131,
+          "end": 137
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "AsyncList",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 151,
+          "end": 161
+        },
+        {
+          "start": 162,
+          "end": 164
+        }
+      ]
+    }
+  ]
+}

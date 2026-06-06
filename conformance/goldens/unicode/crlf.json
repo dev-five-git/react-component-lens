@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "server",
+      "tagName": "Crlf",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 16,
+          "end": 20
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Crlf",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 35,
+          "end": 40
+        },
+        {
+          "start": 41,
+          "end": 43
+        }
+      ]
+    }
+  ]
+}

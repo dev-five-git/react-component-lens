@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Widget",
+      "sourceFilePath": "lib/Widget.tsx",
+      "ranges": [
+        {
+          "start": 9,
+          "end": 15
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Page",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 62,
+          "end": 66
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "Widget",
+      "sourceFilePath": "lib/Widget.tsx",
+      "ranges": [
+        {
+          "start": 78,
+          "end": 85
+        },
+        {
+          "start": 86,
+          "end": 88
+        }
+      ]
+    }
+  ]
+}

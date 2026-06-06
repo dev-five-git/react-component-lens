@@ -1,0 +1,60 @@
+# React Component Lens
+
+Visually distinguish Server Components and Client Components in React / Next.js projects directly in your editor.
+
+[![Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/devfive.react-component-lens)](https://marketplace.visualstudio.com/items?itemName=devfive.react-component-lens)
+
+![React Component Lens demo](medias/demo.png)
+
+## Why
+
+In Next.js App Router and React Server Components, the boundary between server and client execution is critical for performance and bundle size. But JSX like `<MyComponent />` gives no visual cue about where it runs.
+
+React Component Lens solves this by coloring component tags based on whether the imported file contains `"use client"`.
+
+## Architecture
+
+The extension uses the shared Rust analysis core from the React Component Lens workspace. [`packages/core`](../core) is the single implementation; [`packages/core-wasm`](../core-wasm) builds it with `wasm-pack --target nodejs` so VS Code can load the same analyzer as WebAssembly. Zed consumes the same core natively through the `rcl-lsp` binary.
+
+## How It Works
+
+1. Loads the bundled Rust WASM core (`core_wasm.js` and `core_wasm_bg.wasm`)
+2. Parses the active `.tsx` / `.jsx` file for JSX tags
+3. Resolves each import to its source file (supports relative paths, `tsconfig` path aliases, and barrel re-exports)
+4. Detects `"use client"` at the top of the resolved file
+5. Colors the tag shell (`<Component`, `>`, `/>`, `</Component>`) — props are left untouched
+
+Components without `"use client"` are treated as Server Components.
+
+## Settings
+
+| Setting | Default | Description |
+|---|---|---|
+| `reactComponentLens.enabled` | `true` | Enable or disable decorations |
+| `reactComponentLens.debounceMs` | `200` | Delay before recomputing after changes (0 – 2000 ms) |
+| `reactComponentLens.scope.element` | `true` | Highlight JSX element tags (`<Component />`, `</Component>`) |
+| `reactComponentLens.scope.declaration` | `true` | Highlight component declaration names (function, class, variable) |
+| `reactComponentLens.scope.export` | `true` | Highlight component names in export declarations |
+| `reactComponentLens.scope.import` | `true` | Highlight component names in import declarations |
+| `reactComponentLens.scope.type` | `true` | Highlight TypeScript interface and type alias declaration names |
+| `reactComponentLens.highlightColors.clientComponent` | `#14b8a6` | Text color for Client Component tags |
+| `reactComponentLens.highlightColors.serverComponent` | `#f59e0b` | Text color for Server Component tags |
+
+Colors can be any valid CSS color string. The VS Code Settings UI shows a color picker for these fields.
+
+## Commands
+
+| Command | Description |
+|---|---|
+| `React Component Lens: Refresh Decorations` | Clear caches and reapply decorations |
+
+## Requirements
+
+- VS Code 1.14.0 or later
+- A project with `.tsx` or `.jsx` files
+
+No additional runtime, build step, or Next.js installation is required.
+
+## License
+
+MIT

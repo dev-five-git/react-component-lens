@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Design",
+      "sourceFilePath": "design.tsx",
+      "ranges": [
+        {
+          "start": 12,
+          "end": 18
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Screen",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 52,
+          "end": 58
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "Design.Panels.Side",
+      "sourceFilePath": "design.tsx",
+      "ranges": [
+        {
+          "start": 72,
+          "end": 91
+        },
+        {
+          "start": 92,
+          "end": 94
+        }
+      ]
+    }
+  ]
+}

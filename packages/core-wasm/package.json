@@ -1,0 +1,15 @@
+{
+  "name": "@react-component-lens/core-wasm",
+  "private": true,
+  "type": "commonjs",
+  "main": "pkg/core_wasm.js",
+  "types": "pkg/core_wasm.d.ts",
+  "files": [
+    "pkg"
+  ],
+  "scripts": {
+    "build": "wasm-pack build --target nodejs --release --out-dir pkg --out-name core_wasm",
+    "build:production": "wasm-pack build --target nodejs --release --out-dir pkg --out-name core_wasm",
+    "clean": "rm -rf pkg"
+  }
+}

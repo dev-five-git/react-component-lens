@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Thing",
+      "sourceFilePath": "Thing.tsx",
+      "ranges": [
+        {
+          "start": 14,
+          "end": 19
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Consumer",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 54,
+          "end": 62
+        }
+      ]
+    },
+    {
+      "kind": "server",
+      "tagName": "Consumer",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 99,
+          "end": 108
+        },
+        {
+          "start": 120,
+          "end": 122
+        }
+      ]
+    }
+  ]
+}

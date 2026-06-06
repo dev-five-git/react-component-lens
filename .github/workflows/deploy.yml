@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - main
-  pull_request_target: 
+  pull_request_target:
     branches:
       - main
+  workflow_dispatch:
 
 
 permissions:
@@ -15,17 +16,89 @@ permissions:
 jobs:
 
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+          # wasm32-wasip1: rcl-zed clippy. wasm32-unknown-unknown: rcl-core-wasm
+          # clippy + wasm-pack build/test (`bun run test` runs both).
+          target: wasm32-wasip1, wasm32-unknown-unknown
+          cache-key: test-${{ matrix.os }}
+
+      # `bun run test` runs `wasm-pack test --node` (core-wasm wasm-bindgen
+      # tests) and `bun run build` (wasm-pack build), so wasm-pack must exist.
+      - uses: taiki-e/install-action@v2.81.5
+        with:
+          tool: wasm-pack
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.9'
+
       - run: bun install --frozen-lockfile
+
+      # `bun run lint` = oxlint + cargo fmt --check + cargo clippy (native)
+      # + cargo clippy (wasm32-wasip1 rcl-zed) + cargo clippy
+      # (wasm32-unknown-unknown rcl-core-wasm).
       - run: bun run lint
+
       - run: bun run typecheck
+
+      # `bun run test` = cargo test (workspace, excluding the wasm crates)
+      # + wasm-pack test --node (rcl-core-wasm wasm-bindgen tests)
+      # + cargo build wasm32-wasip1 (rcl-zed) + bun run build
+      # + VS Code integration tests (packages/vscode test:integration).
       - run: bun run test
+
+      # TypeScript 100% coverage gate: `bun test` from the repo root applies the
+      # root bunfig (preload + coveragePathIgnorePatterns + coverageThreshold
+      # = 100% lines/functions/statements) over the 5 VS Code extension source
+      # files. Runs on every matrix OS so both `process.platform` branches stay
+      # covered. Relies on `bun run test` above having produced out/core_wasm.js.
+      - run: bun test
+
+      # Coverage gate runs on Linux only to keep one toolchain install per OS.
+      - name: Install cargo-tarpaulin
+        if: matrix.os == 'ubuntu-latest'
+        uses: taiki-e/install-action@v2.81.5
+        with:
+          tool: cargo-tarpaulin
+
+      # tarpaulin/LLVM cannot attribute coverage to the continuation lines of
+      # multi-line expressions, so they are impossible to ever mark covered.
+      # Collapse statements onto single lines first (wide rustfmt) so 100% is
+      # actually attainable, then measure. Pattern: dev-five-git/devup-ui.
+      # `bun run test:coverage` fails the job if line coverage is below 100%.
+      - name: Coverage (100% gate)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          printf '%s\n' \
+            'max_width = 100000' \
+            'tab_spaces = 4' \
+            'newline_style = "Unix"' \
+            'fn_call_width = 100000' \
+            'fn_params_layout = "Compressed"' \
+            'chain_width = 100000' \
+            'merge_derives = true' \
+            'use_small_heuristics = "Default"' > .rustfmt.toml
+          cargo fmt
+          bun run test:coverage
+
+      # Restore canonical formatting even if the coverage gate failed, so no
+      # later step (or cache) sees the collapsed source.
+      - name: Format rollback
+        if: ${{ always() && matrix.os == 'ubuntu-latest' }}
+        run: |
+          rm -f .rustfmt.toml
+          cargo fmt
 
   changepacks:
     name: changepacks
@@ -51,7 +124,7 @@ jobs:
 
   upload-assets:
     needs: changepacks
-    if: ${{ contains(needs.changepacks.outputs.changepacks, 'package.json') }}
+    if: ${{ contains(needs.changepacks.outputs.changepacks, 'packages/vscode/package.json') }}
     permissions:
       contents: write
     name: Upload Assets
@@ -67,27 +140,132 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - name: Package VSIX
+        working-directory: packages/vscode
         run: bunx @vscode/vsce package --no-dependencies
 
       - name: Upload Asset
         uses: owjs3901/upload-github-release-asset@main
         with:
-          upload_url: ${{ fromJson(needs.changepacks.outputs.release_assets_urls)['package.json'] }}
-          asset_path: react-component-lens-*.vsix
+          upload_url: ${{ fromJson(needs.changepacks.outputs.release_assets_urls)['packages/vscode/package.json'] }}
+          asset_path: packages/vscode/react-component-lens-*.vsix
+
+  lsp-binaries:
+    name: lsp-binaries (${{ matrix.target }})
+    needs: changepacks
+    if: ${{ contains(needs.changepacks.outputs.changepacks, 'packages/vscode/package.json') }}
+    permissions:
+      contents: write
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            asset_arch: x86_64
+            asset_os: unknown-linux-gnu
+            cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            asset_arch: aarch64
+            asset_os: unknown-linux-gnu
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+            asset_arch: x86_64
+            asset_os: apple-darwin
+            cross: false
+          - target: aarch64-apple-darwin
+            os: macos-14
+            archive: tar.gz
+            asset_arch: aarch64
+            asset_os: apple-darwin
+            cross: false
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+            asset_arch: x86_64
+            asset_os: pc-windows-msvc
+            cross: false
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: ${{ matrix.target }}
+          cache-key: lsp-binaries-${{ matrix.target }}
+
+      - name: Install cross
+        if: ${{ matrix.cross }}
+        run: cargo install cross --locked --version '^0.2'
+
+      - name: Read VS Code package version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./packages/vscode/package.json').version")
+          stem="rcl-lsp-${version}-${{ matrix.asset_arch }}-${{ matrix.asset_os }}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "stem=${stem}" >> "$GITHUB_OUTPUT"
+          echo "archive=${stem}.${{ matrix.archive }}" >> "$GITHUB_OUTPUT"
+
+      - name: Build rcl-lsp
+        shell: bash
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross build --release --target ${{ matrix.target }} -p rcl-lsp --bin rcl-lsp
+          else
+            cargo build --release --target ${{ matrix.target }} -p rcl-lsp --bin rcl-lsp
+          fi
+
+      - name: Package archive
+        shell: bash
+        run: |
+          mkdir -p staging
+          if [[ "${{ matrix.target }}" == *windows* ]]; then
+            cp "target/${{ matrix.target }}/release/rcl-lsp.exe" staging/
+            (cd staging && 7z a -tzip "../${{ steps.version.outputs.archive }}" rcl-lsp.exe)
+          else
+            cp "target/${{ matrix.target }}/release/rcl-lsp" staging/
+            (cd staging && tar -czf "../${{ steps.version.outputs.archive }}" rcl-lsp)
+          fi
+          ls -lh "${{ steps.version.outputs.archive }}"
+
+      - name: Upload to GitHub Release
+        uses: owjs3901/upload-github-release-asset@main
+        with:
+          upload_url: ${{ fromJson(needs.changepacks.outputs.release_assets_urls)['packages/vscode/package.json'] }}
+          asset_path: ${{ steps.version.outputs.archive }}
 
   publish:
     name: Publish
     runs-on: ubuntu-latest
-    if: ${{ contains(needs.changepacks.outputs.changepacks, 'package.json') }}
+    if: ${{ contains(needs.changepacks.outputs.changepacks, 'packages/vscode/package.json') }}
     needs:
       - changepacks
+      - lsp-binaries
     steps:
       - uses: actions/checkout@v6
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.3.9'
       - run: bun install --frozen-lockfile
+
+      - name: Package VSIX
+        working-directory: packages/vscode
+        run: bunx @vscode/vsce package --no-dependencies
+
       - name: Publish to VS Code Marketplace
-        run: bunx @vscode/vsce publish --no-dependencies
+        working-directory: packages/vscode
+        run: bunx @vscode/vsce publish --no-dependencies --packagePath react-component-lens-*.vsix
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+      - name: Publish to Open VSX
+        working-directory: packages/vscode
+        run: bunx ovsx publish react-component-lens-*.vsix -p $OVSX_PAT
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}

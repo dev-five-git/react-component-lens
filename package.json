@@ -1,142 +1,42 @@
 {
-  "name": "react-component-lens",
-  "displayName": "React Component Lens",
-  "description": "Highlight React Server and Client component usage directly in the editor.",
-  "version": "0.3.0",
-  "publisher": "devfive",
+  "name": "react-component-lens-workspace",
+  "private": true,
+  "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dev-five-git/react-component-lens"
   },
-  "categories": [
-    "Other"
+  "workspaces": [
+    "packages/*"
   ],
-  "keywords": [
-    "react",
-    "nextjs",
-    "server-components",
-    "client-components",
-    "typescript"
-  ],
-  "engines": {
-    "vscode": "^1.14.0"
-  },
-  "activationEvents": [
-    "onLanguage:typescriptreact",
-    "onLanguage:javascriptreact"
-  ],
-  "main": "./out/extension.js",
-  "contributes": {
-    "commands": [
-      {
-        "command": "reactComponentLens.refresh",
-        "title": "React Component Lens: Refresh Decorations"
-      }
-    ],
-    "configuration": {
-      "title": "React Component Lens",
-      "properties": {
-        "reactComponentLens.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable React Component Lens decorations in React editors."
-        },
-        "reactComponentLens.debounceMs": {
-          "type": "number",
-          "default": 200,
-          "minimum": 0,
-          "maximum": 2000,
-          "description": "Debounce delay, in milliseconds, before recomputing decorations after workspace changes."
-        },
-        "reactComponentLens.scope.element": {
-          "type": "boolean",
-          "default": true,
-          "description": "Highlight JSX element tags (<Component />, </Component>)."
-        },
-        "reactComponentLens.scope.declaration": {
-          "type": "boolean",
-          "default": true,
-          "description": "Highlight component declaration names (function, class, variable)."
-        },
-        "reactComponentLens.scope.export": {
-          "type": "boolean",
-          "default": true,
-          "description": "Highlight component names in export declarations (export { Component }, export default Component)."
-        },
-        "reactComponentLens.scope.import": {
-          "type": "boolean",
-          "default": true,
-          "description": "Highlight component names in import declarations (import { Component } from ...)."
-        },
-        "reactComponentLens.scope.type": {
-          "type": "boolean",
-          "default": true,
-          "description": "Highlight TypeScript interface and type alias declaration names."
-        },
-        "reactComponentLens.codelens.enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show CodeLens annotations indicating Server/Client Component kind."
-        },
-        "reactComponentLens.codelens.clientComponent": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show CodeLens for Client Components."
-        },
-        "reactComponentLens.codelens.serverComponent": {
-          "type": "boolean",
-          "default": true,
-          "description": "Show CodeLens for Server Components."
-        },
-        "reactComponentLens.highlightColors": {
-          "type": "object",
-          "default": {
-            "clientComponent": "#14b8a6",
-            "serverComponent": "#f59e0b"
-          },
-          "additionalProperties": false,
-          "description": "Text colors for React Component Lens decorations.",
-          "properties": {
-            "clientComponent": {
-              "type": "string",
-              "format": "color",
-              "default": "#14b8a6",
-              "description": "CSS text color used for Client Component usages."
-            },
-            "serverComponent": {
-              "type": "string",
-              "format": "color",
-              "default": "#f59e0b",
-              "description": "CSS text color used for Server Component usages."
-            }
-          }
-        }
-      }
-    }
-  },
   "scripts": {
-    "build": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked",
-    "build:production": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --minify",
-    "watch": "bun build ./src/extension.ts --outdir ./out --format cjs --target node --external vscode --external typescript --sourcemap=linked --watch",
-    "typecheck": "tsc -p ./tsconfig.json",
-    "lint": "oxlint .",
-    "lint:fix": "oxlint . --fix",
-    "test": "bun test",
-    "vscode:prepublish": "bun run build:production",
+    "build": "bun run --filter '*' build",
+    "build:production": "bun run --filter '*' build:production",
+    "typecheck": "bun run --filter '*' typecheck",
+    "lint": "bun run lint:js && bun run lint:rust",
+    "lint:js": "oxlint .",
+    "lint:rust": "bun run lint:rust:fmt && bun run lint:rust:clippy && bun run lint:rust:clippy:wasm && bun run lint:rust:clippy:wasm-core",
+    "lint:rust:fmt": "cargo fmt --all -- --check",
+    "lint:rust:clippy": "cargo clippy --workspace --exclude rcl-zed --exclude rcl-core-wasm --all-targets -- -D warnings",
+    "lint:rust:clippy:wasm": "cargo clippy --target wasm32-wasip1 --release -p rcl-zed -- -D warnings",
+    "lint:rust:clippy:wasm-core": "cargo clippy --target wasm32-unknown-unknown --release -p rcl-core-wasm -- -D warnings",
+    "lint:fix": "oxlint . --fix && cargo fmt --all",
+    "test": "bun run test:rust && bun run test:wasm-core && bun run test:wasm && bun run build && bun run test:integration",
+    "test:rust": "cargo test --workspace --exclude rcl-zed --exclude rcl-core-wasm",
+    "test:wasm-core": "wasm-pack test --node packages/core-wasm",
+    "test:integration": "bun run --filter react-component-lens test:integration",
+    "test:wasm": "cargo build --target wasm32-wasip1 --release -p rcl-zed",
+    "test:coverage": "cargo tarpaulin --engine llvm --workspace --exclude rcl-zed --exclude rcl-core-wasm --exclude-files \"**/src/bin/**\" --exclude-files \"**/tests/**\" --exclude-files \"packages/core-wasm/**\" --out Stdout --fail-under 100",
     "prepare": "husky"
   },
-  "dependencies": {
-    "typescript": "5.9.3"
-  },
   "devDependencies": {
-    "@types/bun": "^1.3.10",
-    "@types/node": "25.5.0",
-    "@types/vscode": "1.14.0",
-    "@vscode/vsce": "3.7.1",
-    "eslint-plugin-devup": "^2.0.17",
-    "globals": "17.4.0",
+    "@types/bun": "^1.3.14",
+    "@types/node": "25.9.1",
+    "bun-types": "^1.3.14",
+    "eslint-plugin-devup": "^2.0.19",
+    "globals": "17.6.0",
     "husky": "^9.1.7",
-    "oxlint": "^1.55"
+    "oxlint": "^1.68"
   }
 }

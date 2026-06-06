@@ -1,0 +1,22 @@
+id = "react-component-lens"
+name = "React Component Lens"
+description = "Colors JSX component tags by RSC client/server boundary (matches the VS Code extension)."
+version = "0.1.0"
+schema_version = 1
+authors = ["dev-five-git"]
+repository = "https://github.com/dev-five-git/react-component-lens"
+
+# Attach our LSP to Zed's built-in "TSX" language. We do NOT ship a
+# `languages/` directory: defining a language named "TSX" would shadow the
+# built-in one (breaking syntax highlighting + vtsls), and Zed only loads
+# extension semantic_token_rules.json alongside a config.toml. So `.tsx` keeps
+# using the built-in TSX language + vtsls, and rcl-lsp is layered on top:
+# Zed merges semantic tokens from every attached server (semantic_tokens =
+# "combined"). Colors for our custom rscClientComponent / rscServerComponent
+# token types come from `global_lsp_settings.semantic_token_rules` in settings.
+#
+# `languages` must list a language name; "TSX" matches the built-in
+# (crates/grammars/src/tsx/config.toml -> name = "TSX").
+[language_servers.rcl-lsp]
+name = "React Component Lens LSP"
+languages = ["TSX"]

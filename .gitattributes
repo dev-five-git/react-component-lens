@@ -1,0 +1,10 @@
+# Conformance corpus byte offsets are line-ending sensitive: the analyzer
+# computes ranges over raw file bytes, and goldens encode those exact offsets.
+# Pin line endings on every platform so checkout never shifts the offsets.
+conformance/fixtures/** text eol=lf
+conformance/goldens/**  text eol=lf
+
+# This fixture deliberately exercises CRLF offset handling, so its bytes must
+# stay CRLF verbatim on every platform. Treat it as binary so neither
+# core.autocrlf nor the eol filter can rewrite the line endings.
+conformance/fixtures/unicode/crlf/entry.tsx -text

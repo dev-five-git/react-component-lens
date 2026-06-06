@@ -1,0 +1,35 @@
+{
+  "meta": {
+    "contractVersion": 1,
+    "generatorVersion": "1",
+    "tsVersion": "5.9.3"
+  },
+  "usages": [
+    {
+      "kind": "client",
+      "tagName": "Single",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 30,
+          "end": 36
+        }
+      ]
+    },
+    {
+      "kind": "client",
+      "tagName": "Single",
+      "sourceFilePath": "entry.tsx",
+      "ranges": [
+        {
+          "start": 50,
+          "end": 57
+        },
+        {
+          "start": 58,
+          "end": 60
+        }
+      ]
+    }
+  ]
+}

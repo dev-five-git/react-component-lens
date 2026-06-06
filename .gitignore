@@ -2,3 +2,16 @@ node_modules/
 out/
 *.vsix
 coverage
+.omo
+target/
+*.trace.json
+
+# Generated Zed extension binary (compiled from packages/zed/src/lib.rs;
+# Zed builds it from source on install/publish, so it must not be committed).
+packages/zed/extension.wasm
+
+# Generated WASM glue copied into the VS Code extension src by the test
+# preload (packages/vscode/test/wasmSetup.ts). Transient build output.
+packages/vscode/src/core_wasm.js
+packages/vscode/src/core_wasm_bg.wasm
+packages/vscode/src/core_wasm.d.ts
