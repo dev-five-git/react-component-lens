@@ -2,9 +2,11 @@
 //
 // `wasmSetup.ts` preloads a minimal `vscode` module mock and copies the real
 // WASM artifact next to the TypeScript source so `analyzerWasm.ts` can require
-// it exactly as the extension does. These tests intentionally feed native
-// Windows absolute paths (for example `C:\\...\\app\\page.tsx`) into the public
-// analyzer API; only the JS/WASM boundary may translate them.
+// it exactly as the extension does. These tests feed native OS-absolute paths
+// (Windows `C:\\...\\app\\page.tsx` or POSIX `/.../app/page.tsx`, via
+// `os.tmpdir()`) into the public analyzer API; only the JS/WASM boundary may
+// translate them. Path-separator assertions use `path.sep`, and the Windows
+// drive-letter bijection is asserted only on win32.
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -78,10 +80,21 @@ beforeEach(() => {
 
 describe('WASM path boundary helpers', () => {
   test('round-trips Windows drive paths through POSIX WASM paths', () => {
+    // `toWasmPath` is a pure string transform (always POSIX-normalizes for the
+    // WASM core), so it behaves identically on every platform.
     expect(toWasmPath('C:\\a\\b.tsx')).toBe('/C:/a/b.tsx')
     expect(toWasmPath('/C:/a/b.tsx')).toBe('/C:/a/b.tsx')
-    expect(toDiskPath('/C:/a/b.tsx')).toBe('C:\\a\\b.tsx')
-    expect(toDiskPath(toWasmPath('C:\\a\\b.tsx'))).toBe('C:\\a\\b.tsx')
+
+    if (process.platform === 'win32') {
+      // On Windows the boundary maps the POSIX form back to a native drive path.
+      expect(toDiskPath('/C:/a/b.tsx')).toBe('C:\\a\\b.tsx')
+      expect(toDiskPath(toWasmPath('C:\\a\\b.tsx'))).toBe('C:\\a\\b.tsx')
+    } else {
+      // On POSIX `/C:/a/b.tsx` is already a valid disk path; there is no
+      // drive-letter conversion to perform.
+      expect(toDiskPath('/C:/a/b.tsx')).toBe('/C:/a/b.tsx')
+      expect(toDiskPath(toWasmPath('/C:/a/b.tsx'))).toBe('/C:/a/b.tsx')
+    }
   })
 })
 
@@ -99,7 +112,7 @@ describe('VS Code extension integration (analyzerWasm -> WASM core -> resolver)'
       "'use client'\nexport function Button(){ return null }\n",
     )
 
-    expect(pagePath).toContain('\\')
+    expect(pagePath).toContain(path.sep)
     expect(path.isAbsolute(pagePath)).toBe(true)
 
     const pageDoc = new vscodeMock.FakeTextDocument(
@@ -142,8 +155,8 @@ describe('VS Code extension integration (analyzerWasm -> WASM core -> resolver)'
       "'use client'\nexport function Button(){ return null }\n",
     )
 
-    expect(pagePath).toContain('\\')
-    expect(buttonPath).toContain('\\')
+    expect(pagePath).toContain(path.sep)
+    expect(buttonPath).toContain(path.sep)
 
     const pageDoc = new vscodeMock.FakeTextDocument(
       pagePath,
@@ -216,7 +229,7 @@ describe('VS Code extension integration (analyzerWasm -> WASM core -> resolver)'
       "import { Card } from '@ui/index'\nexport default function Page(){ return <Card/> }\n",
     )
 
-    expect(pagePath).toContain('\\')
+    expect(pagePath).toContain(path.sep)
     const pageDoc = new vscodeMock.FakeTextDocument(
       pagePath,
       fs.readFileSync(pagePath, 'utf8'),
