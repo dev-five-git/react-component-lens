@@ -1,6 +1,10 @@
 import * as vscode from 'vscode'
 
-import { ComponentLensAnalyzer, type ScopeConfig } from './analyzerWasm'
+import {
+  ComponentLensAnalyzer,
+  type ScopeConfig,
+  setCoreWasmPath,
+} from './analyzerWasm'
 import { type CodeLensConfig, ComponentCodeLensProvider } from './codelens'
 import { type HighlightColors, LensDecorations } from './decorations'
 import { WorkspaceHost } from './wasmHost'
@@ -24,6 +28,9 @@ interface RclTestGlobal {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // Resolve the wasm glue against the extension's runtime root (correct in dev
+  // and packaged installs) before constructing the analyzer that loads it.
+  setCoreWasmPath(context.asAbsolutePath('out/core_wasm.js'))
   let config = getConfiguration()
   const host = new WorkspaceHost()
   const analyzer = new ComponentLensAnalyzer(host)

@@ -46,12 +46,24 @@ function writeProjectFile(root: string, rel: string, content: string): string {
 }
 
 function makeContext(): {
-  context: { subscriptions: { dispose(): void }[] }
+  context: {
+    subscriptions: { dispose(): void }[]
+    asAbsolutePath(relativePath: string): string
+  }
   disposeAll(): void
 } {
   const subscriptions: { dispose(): void }[] = []
+  const packageRoot = path.resolve(__dirname, '..')
   return {
-    context: { subscriptions },
+    context: {
+      subscriptions,
+      // Mirror vscode.ExtensionContext.asAbsolutePath: resolve against the
+      // extension root (here the package dir, so out/core_wasm.js is the real
+      // built glue that activate() -> setCoreWasmPath() points the loader at).
+      asAbsolutePath(relativePath: string): string {
+        return path.join(packageRoot, relativePath)
+      },
+    },
     disposeAll(): void {
       for (const subscription of subscriptions) {
         try {

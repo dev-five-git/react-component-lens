@@ -35,14 +35,29 @@ interface CoreWasmModule {
   ): { line: number; character: number } | undefined
 }
 
-// The wasm shim is copied next to extension.js at build time (see package.json
-// build script). It is loaded via a relative require so it resolves against
-// out/extension.js at runtime, sidestepping the bundler entirely.
-import { createRequire } from 'node:module'
+// core_wasm.js (the wasm-pack --target nodejs glue) is copied next to the
+// emitted out/extension.js at build time and shipped in the VSIX. It is loaded
+// lazily via a runtime `require(coreWasmPath)`:
+//   - the extension calls setCoreWasmPath(context.asAbsolutePath('out/core_wasm.js'))
+//     in activate(), giving an absolute path that is correct in BOTH dev mode
+//     (extensionDevelopmentPath) and a packaged install;
+//   - tests leave the default './core_wasm.js', which resolves next to this
+//     source file (test/wasmSetup.ts copies the glue there).
+// This avoids bun's `createRequire(__filename)` rewrite, which hardcodes
+// __filename to the build-machine src path and so resolves './core_wasm.js'
+// against src/ instead of out/ — breaking activation in dev and packaged installs.
+let coreWasmPath = './core_wasm.js'
+let wasmModule: CoreWasmModule | undefined
 
-const wasm = createRequire(__filename)(
-  './core_wasm.js',
-) as unknown as CoreWasmModule
+export function setCoreWasmPath(absolutePath: string): void {
+  coreWasmPath = absolutePath
+}
+
+function getWasm(): CoreWasmModule {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  wasmModule ??= require(coreWasmPath) as unknown as CoreWasmModule
+  return wasmModule
+}
 
 export class ComponentLensAnalyzer {
   private readonly host: WorkspaceHost
@@ -50,6 +65,7 @@ export class ComponentLensAnalyzer {
 
   public constructor(host: WorkspaceHost) {
     this.host = host
+    const wasm = getWasm()
     this.jsHost = new wasm.JsHost(host)
   }
 
@@ -69,10 +85,12 @@ export class ComponentLensAnalyzer {
   ): Promise<ComponentUsage[]> {
     const wasmPath = toWasmPath(filePath)
     return Promise.resolve(
-      wasm.analyze(wasmPath, sourceText, scope, this.jsHost).map((usage) => ({
-        ...usage,
-        sourceFilePath: toDiskPath(usage.sourceFilePath),
-      })),
+      getWasm()
+        .analyze(wasmPath, sourceText, scope, this.jsHost)
+        .map((usage) => ({
+          ...usage,
+          sourceFilePath: toDiskPath(usage.sourceFilePath),
+        })),
     )
   }
 
@@ -86,7 +104,7 @@ export class ComponentLensAnalyzer {
       return Promise.resolve(undefined)
     }
     return Promise.resolve(
-      wasm.findComponentDeclaration(wasmPath, text, name, this.jsHost) ??
+      getWasm().findComponentDeclaration(wasmPath, text, name, this.jsHost) ??
         undefined,
     )
   }
