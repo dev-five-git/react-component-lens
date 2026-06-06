@@ -43,8 +43,18 @@ export function toDiskPath(wasmPath: string): string {
 
 export class WorkspaceHost {
   private documentCache: Map<string, vscode.TextDocument> | undefined
-  private lastFilePath = ''
-  private lastNormalizedPath = ''
+  private lastFilePath: string
+  private lastNormalizedPath: string
+
+  // Explicit constructor (the field initializers below run in its body): bun
+  // 1.3.9's coverage emits a phantom synthetic default constructor at an
+  // out-of-range source offset that can never be marked "hit", capping function
+  // coverage (oven-sh/bun#29691, fixed in 1.3.13). Declaring the constructor
+  // makes it count normally; runtime behavior is identical.
+  public constructor() {
+    this.lastFilePath = ''
+    this.lastNormalizedPath = ''
+  }
 
   public readToString(filePath: string): string | undefined {
     const diskPath = toDiskPath(filePath)
