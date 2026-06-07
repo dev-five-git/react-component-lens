@@ -1,0 +1,1 @@
+{"changes":{"packages/zed/Cargo.toml":"Patch","packages/vscode/package.json":"Patch","packages/core-wasm/package.json":"Patch","packages/core-wasm/Cargo.toml":"Patch","packages/lsp/Cargo.toml":"Patch","packages/core/Cargo.toml":"Patch"},"note":"Patch release 1.0.1 (fix deploy: build core-wasm for vsce; apple x86_64 on macos-14)","date":"2026-06-06T13:44:07.293829600Z"}
