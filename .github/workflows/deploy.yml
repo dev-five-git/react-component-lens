@@ -366,11 +366,28 @@ jobs:
           git push origin "${tag}"
           echo "ready=true" >> "$GITHUB_OUTPUT"
 
+      # The action can only BUMP an extension already present in the registry's
+      # extensions.toml; it errors ("no replacements occurred") for a brand-new
+      # one. Detect that up front so the job stays green while the one-time
+      # manual first registration is still pending / under maintainer review.
+      - name: Check registry registration
+        id: registry
+        if: ${{ steps.sync.outputs.ready == 'true' }}
+        shell: bash
+        run: |
+          toml=$(curl -fsSL https://raw.githubusercontent.com/zed-industries/extensions/main/extensions.toml || true)
+          if printf '%s\n' "$toml" | grep -q '^\[react-component-lens\]'; then
+            echo "registered=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "registered=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Zed extension not registered::react-component-lens is not yet in zed-industries/extensions. Skipping auto-PR. Do the one-time manual registration first (see comment above the publish-zed job); subsequent version bumps will auto-open PRs."
+          fi
+
       # Bumps the version + submodule pointer in zed-industries/extensions and
       # opens a PR from an auto-created personal fork (push-to omitted => fork
       # under the COMMITTER_TOKEN owner's account).
       - name: Open zed-industries/extensions PR
-        if: ${{ steps.sync.outputs.ready == 'true' }}
+        if: ${{ steps.sync.outputs.ready == 'true' && steps.registry.outputs.registered == 'true' }}
         uses: huacnlee/zed-extension-action@v2
         with:
           # Must exactly match the [section] key in the registry extensions.toml.
