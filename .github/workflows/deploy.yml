@@ -293,8 +293,17 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
 
+      # Open VSX is published under the 'dev-five' namespace while the VS Code
+      # Marketplace keeps 'devfive'. ovsx derives the namespace from the VSIX
+      # manifest's publisher, so repackage a dedicated VSIX with publisher
+      # 'dev-five' for Open VSX only. create-namespace is best-effort (fails if
+      # the namespace already exists); publish is the authoritative step.
       - name: Publish to Open VSX
         working-directory: packages/vscode
-        run: bunx ovsx publish react-component-lens-*.vsix -p $OVSX_PAT
+        run: |
+          node -e "const fs=require('fs');const p=require('./package.json');p.publisher='dev-five';fs.writeFileSync('./package.json',JSON.stringify(p,null,2)+'\n');"
+          bunx @vscode/vsce package --no-dependencies -o react-component-lens-openvsx.vsix
+          bunx ovsx create-namespace dev-five -p "$OVSX_PAT" || true
+          bunx ovsx publish react-component-lens-openvsx.vsix -p "$OVSX_PAT"
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
