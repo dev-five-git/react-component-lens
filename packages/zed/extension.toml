@@ -1,7 +1,7 @@
 id = "react-component-lens"
 name = "React Component Lens"
 description = "Colors JSX component tags by RSC client/server boundary (matches the VS Code extension)."
-version = "1.0.4"
+version = "1.0.5"
 schema_version = 1
 authors = ["dev-five-git"]
 repository = "https://github.com/dev-five-git/react-component-lens"
