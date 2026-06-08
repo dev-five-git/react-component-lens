@@ -1,8 +1,12 @@
 [package]
 name = "rcl-zed"
 version = "1.0.5"
+# MSRV is set explicitly (not inherited from the workspace's higher 1.93) so
+# Zed's extension packaging toolchain (rustc 1.90) can build this crate. The
+# real floor is 1.88 (let-chains in src/lib.rs); the rest of the workspace keeps
+# its own higher rust-version.
 edition.workspace = true
-rust-version.workspace = true
+rust-version = "1.88"
 publish = false
 license = "MIT"
 repository = "https://github.com/dev-five-git/react-component-lens"
