@@ -1141,7 +1141,7 @@ dependencies = [
 
 [[package]]
 name = "rcl-core"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "oxc_allocator",
  "oxc_ast",
@@ -1155,7 +1155,7 @@ dependencies = [
 
 [[package]]
 name = "rcl-core-wasm"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "console_error_panic_hook",
  "js-sys",
@@ -1169,7 +1169,7 @@ dependencies = [
 
 [[package]]
 name = "rcl-lsp"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "dashmap 6.2.1",
  "rcl-core",
@@ -1179,7 +1179,7 @@ dependencies = [
 
 [[package]]
 name = "rcl-zed"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "zed_extension_api",
 ]

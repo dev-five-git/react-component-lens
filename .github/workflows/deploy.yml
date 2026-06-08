@@ -307,3 +307,74 @@ jobs:
           bunx ovsx publish react-component-lens-openvsx.vsix -p "$OVSX_PAT"
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
+
+  # Mirrors the `publish` job but targets the Zed extension registry. Gated on
+  # the same changepacks release signal (the rcl-zed crate is versioned by
+  # changepacks). Zed has no publish API: the only path is a PR to
+  # zed-industries/extensions, which a Zed maintainer merges. This job automates
+  # opening that version-bump PR. The FIRST registration is a one-time manual PR
+  # (huacnlee/zed-extension-action can only bump an already-registered entry).
+  publish-zed:
+    name: Publish Zed Extension
+    runs-on: ubuntu-latest
+    if: ${{ contains(needs.changepacks.outputs.changepacks, 'packages/zed/Cargo.toml') }}
+    needs:
+      - changepacks
+      - lsp-binaries
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # PAT (classic, scopes: repo + workflow) owned by a personal account.
+          # Used to push the sync commit/tag and to fork + open the registry PR.
+          token: ${{ secrets.COMMITTER_TOKEN }}
+
+      - name: Read released Zed version
+        id: version
+        shell: bash
+        run: |
+          version=$(grep -m1 -E '^version' packages/zed/Cargo.toml | sed -E 's/.*"(.*)".*/\1/')
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=zed-v${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Sync extension.toml + create tag
+        id: sync
+        shell: bash
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists; Zed extension already handled for this version."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # changepacks bumps Cargo.toml but never touches extension.toml. The
+          # Zed registry requires extensions.toml version == extension.toml
+          # version at the pinned submodule commit, so align extension.toml to
+          # the released version and tag that consistent commit.
+          sed -i -E "s/^version = \".*\"/version = \"${{ steps.version.outputs.version }}\"/" packages/zed/extension.toml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet packages/zed/extension.toml; then
+            git add packages/zed/extension.toml
+            # [skip ci] prevents this push from re-triggering the workflow.
+            git commit -m "chore(zed): sync extension.toml to v${{ steps.version.outputs.version }} [skip ci]"
+            git push origin HEAD:main
+          fi
+          git tag "${tag}"
+          git push origin "${tag}"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      # Bumps the version + submodule pointer in zed-industries/extensions and
+      # opens a PR from an auto-created personal fork (push-to omitted => fork
+      # under the COMMITTER_TOKEN owner's account).
+      - name: Open zed-industries/extensions PR
+        if: ${{ steps.sync.outputs.ready == 'true' }}
+        uses: huacnlee/zed-extension-action@v2
+        with:
+          # Must exactly match the [section] key in the registry extensions.toml.
+          extension-name: react-component-lens
+          tag: ${{ steps.version.outputs.tag }}
+        env:
+          COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}
