@@ -1,1 +1,0 @@
-{"changes":{"packages/zed/Cargo.toml":"Patch","packages/lsp/Cargo.toml":"Patch","packages/core/Cargo.toml":"Patch","packages/core-wasm/Cargo.toml":"Patch","packages/vscode/package.json":"Patch","packages/core-wasm/package.json":"Patch"},"note":"Fix Open VSX","date":"2026-06-08T01:58:39.425582600Z"}
