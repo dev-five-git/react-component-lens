@@ -1,1 +1,0 @@
-{"changes":{"packages/core-wasm/package.json":"Patch","packages/lsp/Cargo.toml":"Patch","packages/core-wasm/Cargo.toml":"Patch","packages/zed/Cargo.toml":"Patch","packages/core/Cargo.toml":"Patch","packages/vscode/package.json":"Patch"},"note":"Deploy zed extension","date":"2026-06-08T02:51:11.747201900Z"}
