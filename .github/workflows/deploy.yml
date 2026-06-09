@@ -376,11 +376,11 @@ jobs:
         shell: bash
         run: |
           toml=$(curl -fsSL https://raw.githubusercontent.com/zed-industries/extensions/main/extensions.toml || true)
-          if printf '%s\n' "$toml" | grep -q '^\[react-component-lens\]'; then
+          if printf '%s\n' "$toml" | grep -q '^\[react-component-lens-lsp\]'; then
             echo "registered=true" >> "$GITHUB_OUTPUT"
           else
             echo "registered=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Zed extension not registered::react-component-lens is not yet in zed-industries/extensions. Skipping auto-PR. Do the one-time manual registration first (see comment above the publish-zed job); subsequent version bumps will auto-open PRs."
+            echo "::notice title=Zed extension not registered::react-component-lens-lsp is not yet in zed-industries/extensions. Skipping auto-PR. Do the one-time manual registration first (see comment above the publish-zed job); subsequent version bumps will auto-open PRs."
           fi
 
       # Bumps the version + submodule pointer in zed-industries/extensions and
@@ -391,7 +391,7 @@ jobs:
         uses: huacnlee/zed-extension-action@v2
         with:
           # Must exactly match the [section] key in the registry extensions.toml.
-          extension-name: react-component-lens
+          extension-name: react-component-lens-lsp
           tag: ${{ steps.version.outputs.tag }}
         env:
           COMMITTER_TOKEN: ${{ secrets.COMMITTER_TOKEN }}

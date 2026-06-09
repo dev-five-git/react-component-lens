@@ -1,4 +1,4 @@
-id = "react-component-lens"
+id = "react-component-lens-lsp"
 name = "React Component Lens"
 description = "Colors JSX component tags by RSC client/server boundary (matches the VS Code extension)."
 version = "1.0.5"
