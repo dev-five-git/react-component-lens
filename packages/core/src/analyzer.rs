@@ -1562,10 +1562,10 @@ fn add_default_export_name(
                 component_names.insert("default".to_string());
             }
         }
-        ExportDefaultDeclarationKind::Identifier(identifier) => {
-            if local_component_names.contains(identifier.name.as_str()) {
-                component_names.insert("default".to_string());
-            }
+        ExportDefaultDeclarationKind::Identifier(identifier)
+            if local_component_names.contains(identifier.name.as_str()) =>
+        {
+            component_names.insert("default".to_string());
         }
         ExportDefaultDeclarationKind::ArrowFunctionExpression(_)
         | ExportDefaultDeclarationKind::FunctionExpression(_)
@@ -2478,8 +2478,8 @@ mod tests {
             &mut ranges,
             &mut locals,
         );
-        assert!(ranges.is_empty());
-        assert!(locals.is_empty());
+        assert_eq!(ranges.len(), 0);
+        assert_eq!(locals.len(), 0);
     }
 
     #[rstest]
@@ -2652,8 +2652,8 @@ mod tests {
                 );
             }
         }
-        assert!(local_component_names.is_empty());
-        assert!(pattern_component_names.is_empty());
+        assert_eq!(local_component_names.len(), 0);
+        assert_eq!(pattern_component_names.len(), 0);
     }
 
     #[test]
@@ -2734,6 +2734,9 @@ mod tests {
         };
 
         collector.track_function_declaration(function);
-        assert!(collector.per_component_funcs.expect("func map")["Component"].is_empty());
+        assert_eq!(
+            collector.per_component_funcs.expect("func map")["Component"].len(),
+            0
+        );
     }
 }

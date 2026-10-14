@@ -102,10 +102,7 @@ fn conformance_corpus_matches_oracle_goldens() {
 
     let mut goldens = Vec::new();
     collect_goldens(&goldens_root, &mut goldens);
-    assert!(
-        !goldens.is_empty(),
-        "no goldens found under {goldens_root:?}"
-    );
+    assert_ne!(goldens.len(), 0, "no goldens found under {goldens_root:?}");
 
     let mut passed = 0usize;
     let mut failures: Vec<String> = Vec::new();
@@ -142,8 +139,9 @@ fn conformance_corpus_matches_oracle_goldens() {
 
     let total = goldens.len();
     eprintln!("conformance: {passed}/{total} passing");
-    assert!(
-        failures.is_empty(),
+    assert_eq!(
+        failures.len(),
+        0,
         "{}/{} fixtures failed:\n{}",
         failures.len(),
         total,

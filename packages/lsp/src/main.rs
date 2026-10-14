@@ -408,7 +408,7 @@ mod tests {
             .iter()
             .filter(|(line, character, _, _)| *line == 1 && *character >= 20)
             .collect::<Vec<_>>();
-        assert!(!client_jsx_tuples.is_empty());
+        assert_ne!(client_jsx_tuples.len(), 0);
         assert!(
             client_jsx_tuples
                 .iter()
@@ -484,7 +484,7 @@ mod tests {
         assert_eq!(legend.token_types.len(), 2);
         assert_eq!(legend.token_types[0].as_str(), "rscClientComponent");
         assert_eq!(legend.token_types[1].as_str(), "rscServerComponent");
-        assert!(legend.token_modifiers.is_empty());
+        assert_eq!(legend.token_modifiers.len(), 0);
     }
 
     #[test]
@@ -502,7 +502,7 @@ mod tests {
     fn path_from_uri_returns_document_tsx_for_non_file_url_with_empty_path() {
         let url = Url::parse("untitled:").expect("parse empty untitled URL");
         assert!(url.to_file_path().is_err());
-        assert!(url.path().is_empty());
+        assert_eq!(url.path(), "");
 
         let result = path_from_uri(&url);
 
@@ -624,7 +624,7 @@ mod tests {
         let tuples = semantic_token_tuples_for_source(&entry_path, &entry_source);
 
         // The imported Star is a client component, so its JSX usage in entry.tsx is colored as client (token_type 0).
-        assert!(!tuples.is_empty());
+        assert_ne!(tuples.len(), 0);
         let star_jsx = tuples
             .iter()
             .find(|(line, character, _, _)| *line == 1 && *character >= 20);

@@ -15,6 +15,18 @@ use zed_extension_api::{self as zed, Result};
 const BINARY_NAME: &str = "rcl-lsp";
 const REPOSITORY: &str = "dev-five-git/react-component-lens";
 
+/// The version number inside a release tag.
+///
+/// This repository's releases are tagged by package, e.g.
+/// `react-component-lens(packages/vscode/package.json)@1.0.5`, while the
+/// `rcl-lsp` archives attached to them are named with the bare version
+/// (`rcl-lsp-1.0.5-x86_64-pc-windows-msvc.zip`). A tag without an `@` is
+/// returned as it is, minus a leading `v`.
+fn release_version(tag: &str) -> &str {
+    let version = tag.rsplit('@').next().unwrap_or(tag);
+    version.strip_prefix('v').unwrap_or(version)
+}
+
 struct ReactComponentLensExtension {
     cached_binary_path: Option<String>,
 }
@@ -69,10 +81,9 @@ impl ReactComponentLensExtension {
             zed::Os::Windows => "zip",
         };
 
-        let asset_name = format!(
-            "{BINARY_NAME}-{version}-{arch_str}-{os_str}.{archive_ext}",
-            version = release.version,
-        );
+        // `release.version` is the whole tag, not a version number.
+        let version = release_version(&release.version);
+        let asset_name = format!("{BINARY_NAME}-{version}-{arch_str}-{os_str}.{archive_ext}");
 
         let asset = release
             .assets
@@ -80,7 +91,7 @@ impl ReactComponentLensExtension {
             .find(|asset| asset.name == asset_name)
             .ok_or_else(|| format!("no release asset found matching {asset_name:?}"))?;
 
-        let install_dir = format!("{BINARY_NAME}-{}", release.version);
+        let install_dir = format!("{BINARY_NAME}-{version}");
         let binary_suffix = if matches!(platform, zed::Os::Windows) {
             ".exe"
         } else {
@@ -141,3 +152,26 @@ impl zed::Extension for ReactComponentLensExtension {
 }
 
 zed::register_extension!(ReactComponentLensExtension);
+
+#[cfg(test)]
+mod tests {
+    use super::release_version;
+
+    #[test]
+    fn version_is_taken_from_a_package_scoped_tag() {
+        assert_eq!(
+            release_version("react-component-lens(packages/vscode/package.json)@1.0.5"),
+            "1.0.5"
+        );
+        assert_eq!(
+            release_version("rcl-zed(packages/zed/Cargo.toml)@1.0.5"),
+            "1.0.5"
+        );
+    }
+
+    #[test]
+    fn plain_tags_are_left_alone() {
+        assert_eq!(release_version("1.0.5"), "1.0.5");
+        assert_eq!(release_version("v1.0.5"), "1.0.5");
+    }
+}
